@@ -1,0 +1,23 @@
+{
+  "name": "carealert-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CareAlert AI - ระบบสนับสนุนการดูแลช่วยเหลือนักเรียน (Student Safety & Early Intervention Support System)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "setup": "npm install && npm run seed",
+    "seed": "node --no-warnings server/src/seed.js",
+    "dev": "node scripts/dev.mjs",
+    "build": "npm -w web run build",
+    "start": "node --no-warnings server/src/index.js",
+    "reset": "node scripts/reset.mjs",
+    "test": "node --test server/test/*.test.js"
+  }
+}
