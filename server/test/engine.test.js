@@ -13,6 +13,7 @@ import { runEngine } from '../src/engine/index.js';
 import { weeklyCheckin, followUps, friendConcern, staffNote } from '../src/content/templates.js';
 import { validate } from '../src/engine/validate.js';
 import { scanText } from '../src/engine/lexicon.js';
+import { computeDeadlines } from '../src/engine/sla.js';
 
 const core = weeklyCheckin.items;
 const opts = {
@@ -210,6 +211,30 @@ test('ระดับ 4 ต้องมีกำหนดติดต่อภ�
   const diffMin = (due - Date.now()) / 60000;
   assert.ok(diffMin > 55 && diffMin < 65, `ได้ ${diffMin} นาที`);
   assert.equal(r.actions.twoPersonRule, true);
+});
+
+test('กำหนดเวลาระดับ 2–3 ต้องนับเป็นวันเรียน ไม่ใช่ยืดออกไปเป็นเท่าตัว', () => {
+  // จันทร์ 09:00 น. ตามเวลาไทย (UTC+7) = 02:00 UTC
+  const mondayMorning = new Date('2026-08-10T02:00:00Z');
+
+  const l3 = computeDeadlines(3, { acknowledgeWithinMinutes: 240, contactWithinMinutes: 480, followUpDays: [3] }, mondayMorning);
+  const l3Contact = new Date(`${l3.contactDueAt.replace(' ', 'T')}Z`);
+  const l3Days = (l3Contact - mondayMorning) / 86400000;
+  assert.ok(l3Days > 0.5 && l3Days < 2, `ระดับ 3 ควรครบกำหนดภายในวันเรียนถัดไป แต่ได้ ${l3Days.toFixed(2)} วัน`);
+
+  const l2 = computeDeadlines(2, { acknowledgeWithinMinutes: 480, contactWithinMinutes: 1440, followUpDays: [7] }, mondayMorning);
+  const l2Contact = new Date(`${l2.contactDueAt.replace(' ', 'T')}Z`);
+  const l2Days = (l2Contact - mondayMorning) / 86400000;
+  assert.ok(l2Days > 2 && l2Days < 5, `ระดับ 2 ควรครบกำหนดราว 3 วันเรียน แต่ได้ ${l2Days.toFixed(2)} วัน`);
+});
+
+test('กำหนดเวลาข้ามวันหยุดสุดสัปดาห์ ไม่ให้เกินกำหนดตั้งแต่ยังไม่เปิดเรียน', () => {
+  // ศุกร์ 15:00 น. ตามเวลาไทย = 08:00 UTC
+  const fridayAfternoon = new Date('2026-08-14T08:00:00Z');
+  const d = computeDeadlines(3, { acknowledgeWithinMinutes: 240, contactWithinMinutes: 480, followUpDays: [3] }, fridayAfternoon);
+  const due = new Date(`${d.contactDueAt.replace(' ', 'T')}Z`);
+  const dayLocal = new Date(due.getTime() + 420 * 60000).getUTCDay();
+  assert.ok(dayLocal !== 0 && dayLocal !== 6, 'กำหนดเวลาต้องไม่ตกวันเสาร์หรืออาทิตย์');
 });
 
 // ─────────────────────────── ตัวช่วย ───────────────────────────

@@ -6,5 +6,6 @@ server/data/*.db-wal
 server/data/*.db-shm
 server/.env
 web/dist/
+web/dist-demo/
 .DS_Store
 *.log

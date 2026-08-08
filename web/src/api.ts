@@ -20,7 +20,18 @@ export class ApiError extends Error {
 
 type Options = { method?: string; body?: unknown };
 
+/** โหมดสาธิต: ไม่มีเซิร์ฟเวอร์ ทุกอย่างทำงานในเบราว์เซอร์ (ดู src/demo/api.ts) */
+export const DEMO_MODE = import.meta.env.VITE_DEMO === '1';
+
+let demoModule: Promise<typeof import('./demo/api')> | null = null;
+const loadDemo = () => (demoModule ??= import('./demo/api'));
+
 export async function api<T = any>(path: string, { method = 'GET', body }: Options = {}): Promise<T> {
+  if (DEMO_MODE) {
+    const { demoRequest } = await loadDemo();
+    return demoRequest(path.startsWith('/api') ? path : `/api${path}`, method, body) as Promise<T>;
+  }
+
   const token = getToken();
   const res = await fetch(path.startsWith('/api') ? path : `/api${path}`, {
     method,

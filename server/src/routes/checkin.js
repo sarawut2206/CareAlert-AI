@@ -5,35 +5,13 @@ import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/ratelimit.js';
 import { audit } from '../lib/audit.js';
 import { dailyCheckin, weeklyCheckin, followUps, getTemplate } from '../content/templates.js';
+import { followUpTriggers } from '../engine/followups.js';
 import { runEngine } from '../engine/index.js';
 import { ingestAssessment, assessmentHistory } from '../services/cases.js';
 import { recommendModules } from '../content/lifeskills.js';
 import { helplines, crisisScreen } from '../content/help.js';
 
 export const checkinRouter = Router();
-
-/**
- * เงื่อนไขการเปิดชุดคำถามเชิงลึก (Disclose)
- * เก็บไว้ฝั่งเซิร์ฟเวอร์ เพื่อให้แก้เกณฑ์ได้ที่เดียวและตรวจสอบได้
- */
-export function followUpTriggers(answers = {}) {
-  const n = (id) => {
-    const v = Number(answers[id]);
-    return Number.isNaN(v) ? 0 : v;
-  };
-  const tags = Array.isArray(answers.d2) ? answers.d2 : [];
-  const open = [];
-
-  if (n('c1') >= 2 || n('c2') >= 2 || n('c3') >= 2 || (answers.d1 !== undefined && n('d1') <= 1)) {
-    open.push(followUps.mood.id);
-  }
-  if (n('c6') >= 1 || tags.includes('bullying')) open.push(followUps.bullying.id);
-  if (n('c8') >= 2 || tags.includes('family')) open.push(followUps.home.id);
-  // ความปลอดภัยเปิดง่ายที่สุดโดยตั้งใจ — ยอมถามเกิน ดีกว่าพลาด
-  if (n('c9') >= 1 || tags.includes('safety')) open.push(followUps.safety.id);
-
-  return [...new Set(open)];
-}
 
 /** ดึงข้อคำถามทั้งหมดจากรายชื่อ template */
 function collectItems(templateIds) {

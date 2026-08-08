@@ -1,7 +1,9 @@
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { isStaff, useAuth } from './auth';
+import { DEMO_MODE } from './api';
 import { Spinner } from './components/ui';
 import { HelpButton } from './components/HelpButton';
+import { DemoBanner } from './components/DemoBanner';
 
 import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
@@ -27,13 +29,14 @@ export default function App() {
   const location = useLocation();
 
   if (loading) return <div className="app"><Spinner /></div>;
-  if (!user) return <Login />;
+  if (!user) return <><DemoBannerIfDemo /><Login /></>;
   if (user.mustChangePassword) return <ChangePassword />;
 
   const staff = isStaff(user.role);
 
   return (
     <div className="app">
+      <DemoBannerIfDemo />
       <TopBar />
       {staff && <StaffNav role={user.role} />}
 
@@ -65,6 +68,10 @@ export default function App() {
       {!staff && location.pathname !== '/help' && <HelpButton />}
     </div>
   );
+}
+
+function DemoBannerIfDemo() {
+  return DEMO_MODE ? <DemoBanner /> : null;
 }
 
 function TopBar() {

@@ -265,8 +265,10 @@ function actionPlan(level, c) {
     3: {
       headline: 'ต้องติดต่อและช่วยเหลือโดยเร็ว',
       owner: 'ครูแนะแนว ร่วมกับครูที่ปรึกษา',
-      acknowledgeWithinMinutes: 4 * 60,
-      contactWithinMinutes: 24 * 60,
+      // ระดับ 2–3 นับเป็น "นาทีของเวลาเรียน" (1 วันเรียน = 480 นาที)
+      // อย่าใส่เป็นชั่วโมงนาฬิกา มิฉะนั้นกำหนดเวลาจะยืดออกไปเป็นเท่าตัว
+      acknowledgeWithinMinutes: 240,  // ครึ่งวันเรียน
+      contactWithinMinutes: 480,      // 1 วันเรียน (≈ ภายในวันเรียนถัดไป)
       twoPersonRule: false,
       steps: [
         'นัดคุยกับนักเรียนภายใน 24 ชั่วโมง ในที่ที่เป็นส่วนตัว',
@@ -281,8 +283,8 @@ function actionPlan(level, c) {
     2: {
       headline: 'ให้ผู้รับผิดชอบตรวจสอบ',
       owner: 'ครูที่ปรึกษา',
-      acknowledgeWithinMinutes: 24 * 60,
-      contactWithinMinutes: 3 * 24 * 60,
+      acknowledgeWithinMinutes: 480,   // 1 วันเรียน
+      contactWithinMinutes: 3 * 480,   // 3 วันเรียน
       twoPersonRule: false,
       steps: [
         'ทบทวนข้อมูลย้อนหลังของนักเรียนในระบบ',

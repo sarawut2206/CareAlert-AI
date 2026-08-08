@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { useAuth } from '../auth';
+import { DEMO_MODE } from '../api';
 import { HelpButton } from '../components/HelpButton';
+
+const DEMO_ACCOUNTS = [
+  { label: 'นักเรียน', username: '30101', password: '123456', hint: 'ลองเช็กอิน เล่าเรื่อง แจ้งเป็นห่วงเพื่อน' },
+  { label: 'ครูแนะแนว', username: 'counselor', password: 'counsel1234', hint: 'เห็นคิวเคสทั้งโรงเรียน และปิดเคสระดับ 4 ได้' },
+  { label: 'ครูที่ปรึกษา', username: 'teacher1', password: 'teacher1234', hint: 'เห็นเฉพาะห้อง ม.3/1 ที่รับผิดชอบ' },
+  { label: 'ผู้ดูแลระบบ', username: 'admin', password: 'admin1234', hint: 'ดูร่องรอยการใช้งานและการตั้งค่า' },
+];
 
 export default function Login() {
   const { login } = useAuth();
@@ -9,17 +17,21 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function quickLogin(u: string, p: string) {
     setError(null);
     setBusy(true);
     try {
-      await login(username.trim(), password);
+      await login(u.trim(), p);
     } catch (err: any) {
       setError(err?.message ?? 'เข้าสู่ระบบไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    await quickLogin(username, password);
   }
 
   return (
@@ -59,14 +71,38 @@ export default function Login() {
           </button>
         </form>
 
-        <div className="card">
-          <p className="small muted" style={{ margin: 0 }}>
-            ถ้าเข้าสู่ระบบไม่ได้ ให้ติดต่อครูที่ปรึกษาหรือครูแนะแนว
-            <br />
-            <strong>ถ้าตอนนี้เธอต้องการความช่วยเหลือด่วน</strong> กดปุ่มสีส้มด้านล่างขวาได้เลย
-            โดยไม่ต้องเข้าสู่ระบบ
-          </p>
-        </div>
+        {DEMO_MODE ? (
+          <div className="card">
+            <h3>เลือกบทบาทเพื่อทดลอง</h3>
+            <p className="small muted">กดปุ่มเพื่อเข้าสู่ระบบทันที — ทุกบัญชีเป็นบัญชีสมมติ</p>
+            <div className="stack">
+              {DEMO_ACCOUNTS.map((a) => (
+                <button
+                  key={a.username}
+                  type="button"
+                  className="choice"
+                  disabled={busy}
+                  onClick={() => { setUsername(a.username); setPassword(a.password); void quickLogin(a.username, a.password); }}
+                >
+                  <span className="dot" />
+                  <span>
+                    <strong>{a.label}</strong> <span className="muted small">({a.username})</span>
+                    <br /><span className="small muted">{a.hint}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="card">
+            <p className="small muted" style={{ margin: 0 }}>
+              ถ้าเข้าสู่ระบบไม่ได้ ให้ติดต่อครูที่ปรึกษาหรือครูแนะแนว
+              <br />
+              <strong>ถ้าตอนนี้เธอต้องการความช่วยเหลือด่วน</strong> กดปุ่มสีส้มด้านล่างขวาได้เลย
+              โดยไม่ต้องเข้าสู่ระบบ
+            </p>
+          </div>
+        )}
       </div>
 
       <HelpButton />

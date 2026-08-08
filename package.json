@@ -17,6 +17,8 @@
     "dev": "node scripts/dev.mjs",
     "build": "npm -w web run build",
     "start": "node --no-warnings server/src/index.js",
+    "build:demo": "node scripts/build-demo.mjs",
+    "deploy:pages": "node scripts/deploy-pages.mjs",
     "reset": "node scripts/reset.mjs",
     "test": "node --test server/test/*.test.js"
   }
