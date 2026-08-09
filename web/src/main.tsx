@@ -14,3 +14,12 @@ createRoot(document.getElementById('root')!).render(
     </BrowserRouter>
   </StrictMode>,
 );
+
+// ลงทะเบียน Service Worker เฉพาะฉบับ build จริง (ตอนพัฒนาไม่ลง เพื่อไม่ให้ cache บังโค้ดใหม่)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
+      .catch(() => { /* ออฟไลน์ไม่ได้ก็แค่กลับไปเป็นเว็บปกติ ไม่ต้องรบกวนผู้ใช้ */ });
+  });
+}

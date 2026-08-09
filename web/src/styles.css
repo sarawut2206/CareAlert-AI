@@ -357,6 +357,31 @@ table.data tbody tr:hover { background: var(--blue-50); }
   .split { display: grid; grid-template-columns: 1.6fr 1fr; gap: 1rem; align-items: start; }
 }
 
+/* ───────────────── การเข้าถึง (WCAG 2.1) ───────────────── */
+
+/* 2.4.7 Focus Visible — ผู้ใช้คีย์บอร์ด/สวิตช์ต้องเห็นว่าโฟกัสอยู่ไหนเสมอ */
+:focus-visible {
+  outline: 3px solid var(--orange-500);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* 2.3.3 Animation from Interactions — ผู้ใช้ที่เวียนหัวง่ายปิดแอนิเมชันได้จากระบบ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .breathing-circle { transition: none !important; }
+}
+
+/* ───────────────── มือถือรุ่นมีรอยบาก (iPhone ฯลฯ) ───────────────── */
+
+.topbar { padding-top: calc(.7rem + env(safe-area-inset-top)); }
+.help-fab { bottom: calc(1rem + env(safe-area-inset-bottom)); }
+.container { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+
 @media print {
   .topbar, .nav-tabs, .help-fab, .btn { display: none !important; }
   body { background: #fff; }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../auth';
 import { DEMO_MODE } from '../api';
 import { HelpButton } from '../components/HelpButton';
+import { InstallPrompt } from '../components/InstallPrompt';
 
 const DEMO_ACCOUNTS = [
   { label: 'นักเรียน', username: '30101', password: '123456', hint: 'ลองเช็กอิน เล่าเรื่อง แจ้งเป็นห่วงเพื่อน' },
@@ -39,7 +40,7 @@ export default function Login() {
       <div className="container" style={{ maxWidth: 420, paddingTop: '2.5rem' }}>
         <div className="center" style={{ marginBottom: '1.5rem' }}>
           <img
-            src="/logo.png"
+            src={`${import.meta.env.BASE_URL}logo-sm.png`}
             alt="CareAlert AI"
             style={{ width: '100%', maxWidth: 300, height: 'auto', display: 'block', margin: '0 auto' }}
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
@@ -103,6 +104,8 @@ export default function Login() {
             </p>
           </div>
         )}
+
+        <InstallPrompt />
       </div>
 
       <HelpButton />

@@ -24,6 +24,26 @@ function serverConfigStub(): Plugin {
   };
 }
 
+/**
+ * ฉบับติดตั้งจริง (ไม่ใช่สาธิต): แทนที่โมดูลสาธิตด้วยโมดูลเปล่า
+ * เพื่อไม่ให้โค้ดเอนจินฝั่งเซิร์ฟเวอร์ (ซึ่งใช้ node:fs ฯลฯ) หลุดเข้าไปใน bundle ของเบราว์เซอร์
+ * — Rollup รวม dynamic import ทุกตัวที่เห็น แม้ runtime จะไม่มีวันเรียกก็ตาม
+ */
+function demoApiStub(): Plugin {
+  return {
+    name: 'carealert-demo-api-stub',
+    enforce: 'pre',
+    resolveId(source) {
+      return source === './demo/api' || source.endsWith('/demo/api') ? '\0demo-api-disabled' : null;
+    },
+    load(id) {
+      if (id === '\0demo-api-disabled') {
+        return 'export async function demoRequest(){ throw new Error("โหมดสาธิตถูกปิดในฉบับติดตั้งจริง"); }';
+      }
+    },
+  };
+}
+
 /** GitHub Pages ไม่มี server-side routing — ต้องมี 404.html ที่เป็นตัวแอปเอง เพื่อให้ลิงก์ตรงใช้งานได้ */
 function spaFallback(outDir: string): Plugin {
   return {
@@ -45,7 +65,7 @@ export default defineConfig(({ mode }) => {
     define: { 'import.meta.env.VITE_DEMO': JSON.stringify(demo ? '1' : '0') },
     plugins: [
       react(),
-      ...(demo ? [serverConfigStub()] : []),
+      ...(demo ? [serverConfigStub()] : [demoApiStub()]),
       spaFallback(path.resolve(__dirname, outDir)),
     ],
     server: {

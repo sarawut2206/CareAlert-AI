@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, thaiDateTime } from '../../api';
 import { useAuth } from '../../auth';
+import { InstallPrompt } from '../../components/InstallPrompt';
 
 export default function StudentHome() {
   const { user } = useAuth();
@@ -61,6 +62,8 @@ export default function StudentHome() {
           <span>กิจกรรมสั้น ๆ ไม่มีคะแนน</span>
         </Link>
       </div>
+
+      <InstallPrompt />
 
       <div className="card">
         <div className="row between" style={{ marginBottom: '.4rem' }}>

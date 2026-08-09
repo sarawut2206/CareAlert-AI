@@ -12,7 +12,10 @@ type SchoolContact = { label: string; detail: string };
  * และต้องใช้งานได้แม้ยังไม่ล็อกอิน
  */
 export function HelpButton() {
-  const [open, setOpen] = useState(false);
+  // shortcut "ขอความช่วยเหลือ" จากไอคอนแอปเปิดมาพร้อม ?help=1 — ให้เด้งหน้าช่วยเหลือทันที
+  const [open, setOpen] = useState(
+    () => new URLSearchParams(window.location.search).get('help') === '1',
+  );
   const [lines, setLines] = useState<Helpline[]>([]);
   const [school, setSchool] = useState<SchoolContact[]>([]);
 
