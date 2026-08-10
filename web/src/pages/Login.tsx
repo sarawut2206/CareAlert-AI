@@ -6,8 +6,9 @@ import { InstallPrompt } from '../components/InstallPrompt';
 
 const DEMO_ACCOUNTS = [
   { label: 'นักเรียน', username: '30101', password: '123456', hint: 'ลองเช็กอิน เล่าเรื่อง แจ้งเป็นห่วงเพื่อน' },
-  { label: 'ครูแนะแนว', username: 'counselor', password: 'counsel1234', hint: 'เห็นคิวเคสทั้งโรงเรียน และปิดเคสระดับ 4 ได้' },
   { label: 'ครูที่ปรึกษา', username: 'teacher1', password: 'teacher1234', hint: 'เห็นเฉพาะห้อง ม.3/1 ที่รับผิดชอบ' },
+  { label: 'ครูแนะแนว', username: 'counselor', password: 'counsel1234', hint: 'เห็นคิวเคสทั้งโรงเรียน และปิดเคสระดับ 4 ได้' },
+  { label: 'ผู้อำนวยการ', username: 'director', password: 'director1234', hint: 'แดชบอร์ดภาพรวมทั้งโรงเรียน — ไม่เห็นชื่อนักเรียนรายคน' },
   { label: 'ผู้ดูแลระบบ', username: 'admin', password: 'admin1234', hint: 'ดูร่องรอยการใช้งานและการตั้งค่า' },
 ];
 

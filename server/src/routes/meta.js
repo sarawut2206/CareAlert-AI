@@ -23,7 +23,7 @@ metaRouter.get('/consent', h((_req, res) => {
  * ความโปร่งใสของระบบ — เปิดให้บุคลากรดูได้ว่ากลไกใช้กฎอะไรบ้าง
  * (ถ้าอธิบายกฎให้ครูฟังไม่ได้ ครูก็ไม่ควรเชื่อผลของระบบ)
  */
-metaRouter.get('/engine', requireStaff, h((_req, res) => {
+metaRouter.get('/engine', requireAuth('teacher', 'counselor', 'admin', 'director'), h((_req, res) => {
   res.json({
     engineVersion: ENGINE_VERSION,
     levels: LEVELS,

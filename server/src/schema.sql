@@ -9,7 +9,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY,
-  role          TEXT NOT NULL CHECK (role IN ('student','teacher','counselor','admin')),
+  role          TEXT NOT NULL CHECK (role IN ('student','teacher','counselor','admin','director')),
   username      TEXT NOT NULL UNIQUE,     -- นักเรียนใช้รหัสประจำตัว, บุคลากรใช้ username
   password_hash TEXT NOT NULL,
   display_name  TEXT NOT NULL,

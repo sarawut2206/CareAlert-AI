@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, getToken, setToken } from './api';
 
-export type Role = 'student' | 'teacher' | 'counselor' | 'admin';
+export type Role = 'student' | 'teacher' | 'counselor' | 'admin' | 'director';
 
 export type User = {
   id: number;
@@ -76,4 +76,8 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
+/** บุคลากรที่ทำงานกับเคสรายบุคคลได้ (director ไม่รวม — เห็นเฉพาะภาพรวม) */
 export const isStaff = (role?: Role) => role === 'teacher' || role === 'counselor' || role === 'admin';
+
+/** ผู้บริหาร — เห็นแดชบอร์ดรวมทั้งโรงเรียน แต่ไม่เห็นข้อมูลนักเรียนรายคน */
+export const isExecutive = (role?: Role) => role === 'director';

@@ -42,6 +42,7 @@ type AnyRec = Record<string, any>;
 
 const users: AnyRec[] = [
   { id: 1, role: 'admin', username: 'admin', password: 'admin1234', display_name: 'ผู้ดูแลระบบ (สาธิต)', active: 1, last_login_at: daysAgo(1) },
+  { id: 5, role: 'director', username: 'director', password: 'director1234', display_name: 'ผู้อำนวยการ วิชัย', active: 1, last_login_at: daysAgo(1) },
   { id: 2, role: 'counselor', username: 'counselor', password: 'counsel1234', display_name: 'ครูแนะแนว สมฤดี', active: 1, last_login_at: daysAgo(0) },
   { id: 3, role: 'teacher', username: 'teacher1', password: 'teacher1234', display_name: 'ครูที่ปรึกษา อนุชา', active: 1, last_login_at: daysAgo(2) },
   { id: 4, role: 'teacher', username: 'teacher2', password: 'teacher1234', display_name: 'ครูที่ปรึกษา ปิยะดา', active: 1, last_login_at: daysAgo(3) },
@@ -249,6 +250,35 @@ async function seedOnce() {
     state.session = users.find((u) => u.id === 2)!;
     addEvent(c.id, 'acknowledged', 'รับเรื่องแล้ว');
     state.session = null;
+  }
+
+  // ประวัติย้อนหลัง 8 สัปดาห์ — ให้แดชบอร์ดผู้บริหารมีแนวโน้มให้ดู
+  // (สังเคราะห์เฉพาะแถวสรุปสำหรับกราฟรวม ไม่ใช่เคสจริง)
+  const histPattern = [
+    { d: 55, n: 3, hi: 0 }, { d: 48, n: 4, hi: 0 }, { d: 41, n: 4, hi: 1 },
+    { d: 34, n: 5, hi: 0 }, { d: 27, n: 4, hi: 1 }, { d: 20, n: 5, hi: 0 },
+    { d: 13, n: 6, hi: 1 }, { d: 6, n: 5, hi: 0 },
+  ];
+  for (const wk of histPattern) {
+    for (let i = 0; i < wk.n; i++) {
+      const sid = students[i % students.length].id;
+      const level = i === 0 && wk.hi ? 3 : i % 3 === 0 ? 2 : 1;
+      state.assessments.push({
+        id: nextId('assessment'), source_type: 'checkin', source_id: 0,
+        student_id: sid, engine_version: ENGINE_VERSION,
+        level, concern_index: level === 3 ? 68 : level === 2 ? 42 : 12,
+        data_sufficiency: 'SUFFICIENT',
+        dimensions: { severity: level - 1, impact: level - 1, frequency: 0, duration: 0, isolation: 1, trajectory: 0, safety: 0, protective: 2 },
+        dimensions_json: '',
+        flags: { validation: [], lexicon: [], contextTags: level >= 2 ? ['context:study'] : [], wantsContact: 'no', needsHumanRead: false },
+        rationale: { matched: [], modifiers: [], decidingRules: [], note: '' },
+        llm_used: 0, created_at: daysAgo(wk.d - (i % 5)),
+      });
+      state.checkins.push({
+        id: nextId('checkin'), student_id: sid, template_id: 'weekly-core',
+        answers: {}, submitted_at: daysAgo(wk.d - (i % 5)),
+      });
+    }
   }
 
   // เคส 2 — บุคลากรบันทึกข้อสังเกต (ระดับ 2) ยังไม่มีใครรับเรื่อง
@@ -630,6 +660,7 @@ export async function demoRequest(path: string, method: string, body: any): Prom
   }
   if (key === 'GET /students') {
     const u = requireSession();
+    need(u.role !== 'director', 'บทบาทผู้บริหารเข้าถึงข้อมูลนักเรียนรายคนไม่ได้', 403);
     const term = (q.get('q') ?? '').toLowerCase();
     const cid = q.get('classroomId') ? Number(q.get('classroomId')) : null;
     let list = students.filter((s) => s.active);
@@ -660,6 +691,11 @@ export async function demoRequest(path: string, method: string, body: any): Prom
 
   // ── ภาพรวมและกฎ ───────────────────────────────────────────
   if (key === 'GET /analytics/overview') return ok(analytics(Number(q.get('days') ?? 30)));
+  if (key === 'GET /analytics/executive') {
+    const u = requireSession();
+    need(['director', 'counselor', 'admin'].includes(u.role), 'เฉพาะผู้บริหาร ครูแนะแนว หรือผู้ดูแลระบบ', 403);
+    return ok(executiveAnalytics(Number(q.get('days') ?? 90)));
+  }
   if (key === 'GET /meta/engine') {
     return ok({
       engineVersion: ENGINE_VERSION, levels: LEVELS, dimensions: DIMENSIONS,
@@ -719,6 +755,8 @@ function collect(ids: string[]) {
 
 function visibleCases() {
   const u = requireSession();
+  // ผู้บริหารเห็นเฉพาะภาพรวม — เข้าคิวเคสรายบุคคลไม่ได้ (เหมือนเซิร์ฟเวอร์จริง)
+  need(u.role !== 'director', 'บทบาทผู้บริหารเข้าถึงเคสรายบุคคลไม่ได้ — ดูภาพรวมได้ที่แดชบอร์ดผู้บริหาร', 403);
   if (u.role === 'teacher') {
     return state.cases.filter((c) => {
       const s = students.find((x) => x.id === c.student_id);
@@ -776,6 +814,104 @@ function analytics(days: number) {
     topTags: Object.entries(tagCount).map(([tag, n]) => ({ tag, n })).sort((a, b) => b.n - a.n).slice(0, 12),
     lifeskills: { started: state.lifeskillProgress.length, completed: state.lifeskillProgress.filter((p) => p.completed).length },
     note: 'โหมดสาธิต: ตัวเลขมาจากข้อมูลสมมติในแท็บนี้เท่านั้น · ในระบบจริงกลุ่มที่มีจำนวนน้อยกว่า 5 จะถูกกลบเพื่อป้องกันการระบุตัวนักเรียน',
+  };
+}
+
+function executiveAnalytics(days: number) {
+  const cutoff = daysAgo(days);
+  const inPeriod = (d: string) => d >= cutoff;
+
+  const active = new Set(state.checkins.filter((c) => inPeriod(c.submitted_at)).map((c) => c.student_id)).size;
+  const open = state.cases.filter((c) => c.status !== 'closed');
+
+  const kpi = {
+    students: students.length,
+    activeStudents: active,
+    participationRate: Math.round((active / students.length) * 100),
+    openL4: open.filter((c) => c.level === 4).length,
+    openL3: open.filter((c) => c.level === 3).length,
+    openL2: open.filter((c) => c.level === 2).length,
+    overdue: open.filter((c) => slaStatus(c.contact_due_at, c.first_contact_at) === 'overdue').length,
+    unacknowledged: open.filter((c) => c.status === 'new').length,
+  };
+
+  const period = state.cases.filter((c) => inPeriod(c.opened_at));
+  let ackMet = 0; let contactMet = 0;
+  const contactH: number[] = []; const closeH: number[] = [];
+  const t = (s: string) => new Date(`${s.replace(' ', 'T')}Z`).getTime();
+  for (const c of period) {
+    if (slaStatus(c.acknowledge_due_at, c.acknowledged_at) === 'met') ackMet++;
+    if (slaStatus(c.contact_due_at, c.first_contact_at) === 'met') contactMet++;
+    if (c.first_contact_at) contactH.push((t(c.first_contact_at) - t(c.opened_at)) / 3600000);
+    if (c.closed_at) closeH.push((t(c.closed_at) - t(c.opened_at)) / 3600000);
+  }
+  const median = (a: number[]) => (a.length ? Math.round([...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] * 10) / 10 : null);
+
+  const weekKey = (s: string) => {
+    const d = new Date(`${s.replace(' ', 'T')}Z`);
+    const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const wk = Math.floor((d.getTime() - start.getTime()) / (7 * 86400000));
+    return `${d.getUTCFullYear()}-${String(wk).padStart(2, '0')}`;
+  };
+  const wmap: Record<string, { assessments: number; priority: number; cases: number }> = {};
+  for (const a of state.assessments.filter((x) => inPeriod(x.created_at))) {
+    const k = weekKey(a.created_at);
+    (wmap[k] ??= { assessments: 0, priority: 0, cases: 0 }).assessments++;
+    if (a.level >= 3) wmap[k].priority++;
+  }
+  for (const c of period) {
+    const k = weekKey(c.opened_at);
+    (wmap[k] ??= { assessments: 0, priority: 0, cases: 0 }).cases++;
+  }
+  const weekly = Object.entries(wmap).sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([week, v]) => ({ week, ...v }));
+
+  const byGradeLevel = [...new Set(classrooms.map((c) => c.level))].map((grade) => {
+    const ids = students.filter((s) => classrooms.find((c) => c.id === s.classroom_id)?.level === grade).map((s) => s.id);
+    const act = new Set(state.checkins.filter((c) => inPeriod(c.submitted_at) && ids.includes(c.student_id)).map((c) => c.student_id)).size;
+    return ids.length < 5
+      ? { grade, students: ids.length, active: null, rate: null }
+      : { grade, students: ids.length, active: act, rate: Math.round((act / ids.length) * 100) };
+  });
+
+  const tagCount: Record<string, number> = {};
+  for (const a of state.assessments.filter((x) => inPeriod(x.created_at) && x.level >= 2)) {
+    for (const tg of a.flags.contextTags ?? []) tagCount[tg] = (tagCount[tg] ?? 0) + 1;
+    for (const c of a.flags.lexicon ?? []) tagCount[`lexicon:${c}`] = (tagCount[`lexicon:${c}`] ?? 0) + 1;
+  }
+
+  const originCount: Record<string, number> = {};
+  for (const c of period) originCount[c.origin] = (originCount[c.origin] ?? 0) + 1;
+
+  return {
+    days, kpi,
+    sla: {
+      total: period.length,
+      ackRate: period.length ? Math.round((ackMet / period.length) * 100) : null,
+      contactRate: period.length ? Math.round((contactMet / period.length) * 100) : null,
+      medianContactHours: median(contactH),
+      medianCloseHours: median(closeH),
+    },
+    funnel: {
+      opened: period.length,
+      acknowledged: period.filter((c) => c.acknowledged_at).length,
+      contacted: period.filter((c) => c.first_contact_at).length,
+      referred: period.filter((c) => c.status === 'referred').length,
+      closed: period.filter((c) => c.status === 'closed').length,
+    },
+    weekly, byGradeLevel,
+    topCategories: Object.entries(tagCount).map(([tag, n]) => ({ tag, n })).sort((a, b) => b.n - a.n).slice(0, 10),
+    origins: Object.entries(originCount).map(([origin, n]) => ({ origin, n })),
+    lifeskills: {
+      started: state.lifeskillProgress.length,
+      completed: state.lifeskillProgress.filter((p) => p.completed).length,
+    },
+    governance: [
+      'โหมดสาธิต: ตัวเลขทั้งหมดมาจากข้อมูลสมมติในแท็บนี้',
+      'แดชบอร์ดนี้แสดงเฉพาะข้อมูลรวม ไม่มีชื่อนักเรียน — การดูรายเคสเป็นหน้าที่ของครูแนะแนวและทีมดูแล',
+      'ห้ามใช้ตัวเลขเหล่านี้ประเมินครูหรือจัดอันดับห้องเรียน',
+      'ตัวเลขที่สำคัญที่สุดคือความเร็วในการตอบสนอง ไม่ใช่จำนวนเคสที่ตรวจพบ',
+    ],
   };
 }
 

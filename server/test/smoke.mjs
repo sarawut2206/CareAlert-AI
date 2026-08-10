@@ -156,6 +156,19 @@ check('เปิดดูกฎทั้งหมดของระบบได�
 const help = await api('/api/meta/help');
 check('หน้าขอความช่วยเหลือเปิดได้โดยไม่ต้องล็อกอิน', help.data.helplines?.length > 0);
 
+// 10.5) ผู้บริหาร: เห็นภาพรวม แต่ห้ามเห็นรายบุคคล
+const directorToken = await login('director', 'director1234');
+const exec = await api('/api/analytics/executive?days=90', { token: directorToken });
+check('ผู้บริหารเปิดแดชบอร์ดภาพรวมได้', exec.status === 200 && exec.data.kpi !== undefined,
+  JSON.stringify(exec.data).slice(0, 150));
+check('แดชบอร์ดผู้บริหารไม่มีชื่อนักเรียน',
+  !JSON.stringify(exec.data).includes('นักเรียนตัวอย่าง'));
+
+const execCases = await api('/api/cases', { token: directorToken });
+check('ผู้บริหารเข้าคิวเคสรายบุคคลไม่ได้', execCases.status === 403, `ได้ ${execCases.status}`);
+const execStudents = await api('/api/students', { token: directorToken });
+check('ผู้บริหารค้นหานักเรียนรายคนไม่ได้', execStudents.status === 403, `ได้ ${execStudents.status}`);
+
 // 11) ผู้ดูแลเห็น audit log
 const adminToken = await login('admin', 'admin1234');
 const auditLog = await api('/api/admin/audit?limit=20', { token: adminToken });

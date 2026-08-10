@@ -20,7 +20,7 @@ adminRouter.get('/users', requireAdmin, h((req, res) => {
 }));
 
 adminRouter.post('/users', requireAdmin, h((req, res) => {
-  const role = oneOf(req.body?.role, 'บทบาท', ['teacher', 'counselor', 'admin']);
+  const role = oneOf(req.body?.role, 'บทบาท', ['teacher', 'counselor', 'admin', 'director']);
   const username = str(req.body?.username, 'ชื่อผู้ใช้', { min: 3, max: 64 }).toLowerCase();
   const displayName = str(req.body?.displayName, 'ชื่อที่แสดง', { min: 2, max: 120 });
 

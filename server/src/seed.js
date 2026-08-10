@@ -10,6 +10,7 @@ import { hashPassword } from './lib/crypto.js';
 
 const STAFF = [
   { role: 'admin',     username: 'admin',    password: 'admin1234',    name: 'ผู้ดูแลระบบ' },
+  { role: 'director',  username: 'director', password: 'director1234', name: 'ผู้อำนวยการ วิชัย' },
   { role: 'counselor', username: 'counselor', password: 'counsel1234', name: 'ครูแนะแนว สมฤดี' },
   { role: 'teacher',   username: 'teacher1', password: 'teacher1234',  name: 'ครูที่ปรึกษา อนุชา' },
   { role: 'teacher',   username: 'teacher2', password: 'teacher1234',  name: 'ครูที่ปรึกษา ปิยะดา' },

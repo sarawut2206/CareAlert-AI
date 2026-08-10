@@ -9,7 +9,32 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 mkdirSync(path.dirname(config.dbPath), { recursive: true });
 
 export const db = new DatabaseSync(config.dbPath);
-db.exec(readFileSync(path.join(here, 'schema.sql'), 'utf8'));
+const schemaText = readFileSync(path.join(here, 'schema.sql'), 'utf8');
+db.exec(schemaText);
+
+/**
+ * Migration: ฐานข้อมูลที่สร้างก่อนมีบทบาท 'director' จะมี CHECK เก่าฝังอยู่ในตาราง
+ * (SQLite แก้ CHECK ตรง ๆ ไม่ได้ ต้องสร้างตารางใหม่แล้วย้ายข้อมูล)
+ */
+{
+  const usersDef = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'`)
+    .get();
+  if (usersDef && !usersDef.sql.includes("'director'")) {
+    const ddl = schemaText
+      .match(/CREATE TABLE IF NOT EXISTS users \([\s\S]*?\);/)[0]
+      .replace('IF NOT EXISTS users', 'users_migrated');
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN');
+    db.exec(ddl);
+    db.exec('INSERT INTO users_migrated SELECT * FROM users');
+    db.exec('DROP TABLE users');
+    db.exec('ALTER TABLE users_migrated RENAME TO users');
+    db.exec('COMMIT');
+    db.exec('PRAGMA foreign_keys = ON');
+    console.log('[migration] เพิ่มบทบาท director ในตาราง users แล้ว');
+  }
+}
 
 /** SELECT หลายแถว */
 export function all(sql, params = []) {

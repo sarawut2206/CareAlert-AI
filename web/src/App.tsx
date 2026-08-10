@@ -1,5 +1,5 @@
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { isStaff, useAuth } from './auth';
+import { isExecutive, isStaff, useAuth } from './auth';
 import { DEMO_MODE } from './api';
 import { Spinner } from './components/ui';
 import { HelpButton } from './components/HelpButton';
@@ -16,6 +16,7 @@ import Skills from './pages/student/Skills';
 import SkillModule from './pages/student/SkillModule';
 
 import Queue from './pages/staff/Queue';
+import ExecDashboard from './pages/staff/ExecDashboard';
 import CaseDetail from './pages/staff/CaseDetail';
 import StudentsPage from './pages/staff/StudentsPage';
 import StudentProfile from './pages/staff/StudentProfile';
@@ -33,15 +34,22 @@ export default function App() {
   if (user.mustChangePassword) return <ChangePassword />;
 
   const staff = isStaff(user.role);
+  const executive = isExecutive(user.role);
 
   return (
     <div className="app">
       <DemoBannerIfDemo />
       <TopBar />
-      {staff && <StaffNav role={user.role} />}
+      {(staff || executive) && <StaffNav role={user.role} />}
 
       <Routes>
-        {staff ? (
+        {executive ? (
+          /* ผู้บริหารเห็นเฉพาะภาพรวม — เข้าคิวเคสและข้อมูลนักเรียนรายคนไม่ได้ */
+          <>
+            <Route path="/" element={<ExecDashboard />} />
+            <Route path="/rules" element={<RuleBook />} />
+          </>
+        ) : staff ? (
           <>
             <Route path="/" element={<Queue />} />
             <Route path="/cases/:id" element={<CaseDetail />} />
@@ -49,6 +57,9 @@ export default function App() {
             <Route path="/students/:id" element={<StudentProfile />} />
             <Route path="/note" element={<StaffNote />} />
             <Route path="/analytics" element={<Analytics />} />
+            {['counselor', 'admin'].includes(user.role) && (
+              <Route path="/executive" element={<ExecDashboard />} />
+            )}
             <Route path="/rules" element={<RuleBook />} />
             {user.role === 'admin' && <Route path="/admin" element={<Admin />} />}
           </>
@@ -65,7 +76,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
-      {!staff && location.pathname !== '/help' && <HelpButton />}
+      {!staff && !executive && location.pathname !== '/help' && <HelpButton />}
     </div>
   );
 }
@@ -90,14 +101,20 @@ function TopBar() {
 }
 
 function StaffNav({ role }: { role: string }) {
-  const tabs = [
-    { to: '/', label: 'คิวเคส', end: true },
-    { to: '/students', label: 'นักเรียน' },
-    { to: '/note', label: 'บันทึกข้อสังเกต' },
-    { to: '/analytics', label: 'ภาพรวม' },
-    { to: '/rules', label: 'กฎของระบบ' },
-    ...(role === 'admin' ? [{ to: '/admin', label: 'ผู้ดูแลระบบ' }] : []),
-  ];
+  const tabs = role === 'director'
+    ? [
+        { to: '/', label: 'แดชบอร์ดผู้บริหาร', end: true },
+        { to: '/rules', label: 'กฎของระบบ' },
+      ]
+    : [
+        { to: '/', label: 'คิวเคส', end: true },
+        { to: '/students', label: 'นักเรียน' },
+        { to: '/note', label: 'บันทึกข้อสังเกต' },
+        { to: '/analytics', label: 'ภาพรวม' },
+        ...(['counselor', 'admin'].includes(role) ? [{ to: '/executive', label: 'สรุปผู้บริหาร' }] : []),
+        { to: '/rules', label: 'กฎของระบบ' },
+        ...(role === 'admin' ? [{ to: '/admin', label: 'ผู้ดูแลระบบ' }] : []),
+      ];
   return (
     <nav className="nav-tabs">
       {tabs.map((t) => (

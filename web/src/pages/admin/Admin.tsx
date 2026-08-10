@@ -73,6 +73,7 @@ function Users() {
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={{ flex: 1, minWidth: 140 }}>
             <option value="teacher">ครูที่ปรึกษา</option>
             <option value="counselor">ครูแนะแนว</option>
+            <option value="director">ผู้บริหาร (เห็นเฉพาะภาพรวม)</option>
             <option value="admin">ผู้ดูแลระบบ</option>
           </select>
           <input placeholder="ชื่อผู้ใช้" value={form.username}
@@ -106,7 +107,7 @@ function Users() {
 }
 
 const ROLE_TH: Record<string, string> = {
-  teacher: 'ครูที่ปรึกษา', counselor: 'ครูแนะแนว', admin: 'ผู้ดูแลระบบ',
+  teacher: 'ครูที่ปรึกษา', counselor: 'ครูแนะแนว', director: 'ผู้บริหาร', admin: 'ผู้ดูแลระบบ',
 };
 
 // ─────────────────────────── นำเข้านักเรียน ───────────────────────────
