@@ -130,6 +130,59 @@ adminRouter.post('/students/import', requireAdmin, h((req, res) => {
   res.json({ ok: true, created, errors });
 }));
 
+// ─────────────────────────── โหมดทดลอง (เข้าด้วยรายชื่อ) ───────────────────────────
+
+adminRouter.get('/trial', requireAdmin, h((_req, res) => {
+  const cfg = getSetting('trial.roster', { enabled: false, accessCode: '', classroomIds: [] });
+
+  // ความคืบหน้าการตั้งรหัสรายห้อง — ครูใช้ดูว่าห้องไหนตั้งครบแล้ว
+  const progress = all(
+    `SELECT cl.id, cl.name,
+            COUNT(s.id) AS total,
+            COALESCE(SUM(u.self_pin_set), 0) AS claimed
+       FROM classrooms cl
+       LEFT JOIN students s ON s.classroom_id = cl.id AND s.active = 1
+       LEFT JOIN users u ON u.id = s.user_id
+      GROUP BY cl.id
+      ORDER BY cl.name`,
+  );
+
+  res.json({ trial: cfg, progress });
+}));
+
+adminRouter.put('/trial', requireAdmin, h((req, res) => {
+  const enabled = bool(req.body?.enabled);
+  const accessCode = str(req.body?.accessCode, 'รหัสเข้าโรงเรียน', { required: false, max: 32 }) ?? '';
+  const classroomIds = Array.isArray(req.body?.classroomIds)
+    ? req.body.classroomIds.map(Number).filter(Number.isInteger)
+    : [];
+
+  if (enabled && !accessCode.trim()) {
+    throw bad('ต้องตั้งรหัสเข้าโรงเรียนก่อนเปิดโหมดทดลอง — เพื่อไม่ให้รายชื่อนักเรียนจริงเปิดสู่สาธารณะ');
+  }
+  if (enabled && classroomIds.length === 0) {
+    throw bad('เลือกอย่างน้อยหนึ่งห้องเรียนที่จะเปิดให้ทดลอง');
+  }
+
+  setSetting('trial.roster', { enabled, accessCode: accessCode.trim(), classroomIds });
+  audit(req, 'admin.trial.update', { detail: { enabled, classrooms: classroomIds.length } });
+  res.json({ ok: true });
+}));
+
+/** ล้างรหัสที่นักเรียนตั้งเอง เพื่อให้ตั้งใหม่ได้ (กรณีลืมรหัส) */
+adminRouter.post('/students/:id/reset-pin', requireAuth('admin', 'counselor'), h((req, res) => {
+  const id = int(req.params.id, 'รหัสนักเรียน');
+  const student = get('SELECT s.id, s.display_name, s.user_id FROM students s WHERE s.id = ?', [id]);
+  if (!student) throw notFound('ไม่พบนักเรียน');
+
+  run(
+    `UPDATE users SET self_pin_set = 0, failed_logins = 0, locked_until = NULL WHERE id = ?`,
+    [student.user_id],
+  );
+  audit(req, 'admin.student.resetPin', { entity: 'student', entityId: id });
+  res.json({ ok: true, message: `${student.display_name} ตั้งรหัสใหม่ได้แล้วในการเข้าครั้งถัดไป` });
+}));
+
 // ─────────────────────────── ตั้งค่า ───────────────────────────
 
 adminRouter.get('/settings', requireAdmin, h((_req, res) => {

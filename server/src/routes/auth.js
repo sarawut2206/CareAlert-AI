@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { get, run } from '../db.js';
+import { get, all, run, getSetting } from '../db.js';
 import { verifyPassword, hashPassword, signToken } from '../lib/crypto.js';
-import { h, str, bad, unauthorized, AppError } from '../lib/http.js';
+import { h, str, int, bad, unauthorized, forbidden, notFound, AppError } from '../lib/http.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/ratelimit.js';
 import { audit } from '../lib/audit.js';
 
 export const authRouter = Router();
@@ -70,6 +71,157 @@ authRouter.post('/change-password', requireAuth(), h((req, res) => {
   run('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [hashPassword(next), user.id]);
   audit(req, 'password.changed', { entity: 'user', entityId: user.id });
   res.json({ ok: true });
+}));
+
+// ───────────────────────────────────────────────────────────────
+//  โหมดทดลอง — เข้าระบบด้วยการกดชื่อตัวเอง แล้วตั้ง PIN เอง
+//
+//  ปัญหาที่แก้: การแจกกระดาษรหัสผ่านหลายร้อยใบทำให้การทดลองไม่เกิดขึ้นจริง
+//
+//  ความเสี่ยงที่ต้องคุมไว้ 2 ข้อ:
+//   1. รายชื่อนักเรียนจริงหลุดสู่สาธารณะ → กันด้วย "รหัสเข้าโรงเรียน" ที่ครูบอกในห้อง
+//   2. เพื่อนกดชื่อเราแล้วสวมรอย → กันด้วย PIN ที่นักเรียนตั้งเองในการเข้าครั้งแรก
+//      (ช่วงเสี่ยงเหลือแค่ "ครั้งแรกก่อนใครจะตั้ง" จึงควรให้ครูคุมตอนตั้งพร้อมกันในคาบ)
+// ───────────────────────────────────────────────────────────────
+
+const rosterLimiter = rateLimit({ windowMs: 60_000, max: 20 });
+
+function trialConfig() {
+  return getSetting('trial.roster', { enabled: false, accessCode: '', classroomIds: [] });
+}
+
+/** ตรวจว่าโหมดทดลองเปิดอยู่ และรหัสเข้าโรงเรียนถูกต้อง */
+function requireTrial(accessCode) {
+  const cfg = trialConfig();
+  if (!cfg.enabled) throw forbidden('ยังไม่ได้เปิดโหมดทดลองสำหรับการเข้าด้วยรายชื่อ');
+  const expected = String(cfg.accessCode ?? '').trim();
+  if (expected && String(accessCode ?? '').trim().toUpperCase() !== expected.toUpperCase()) {
+    throw unauthorized('รหัสเข้าโรงเรียนไม่ถูกต้อง — ถามครูประจำวิชาได้เลย');
+  }
+  return cfg;
+}
+
+/** สถานะโหมดทดลอง — ให้หน้า login รู้ว่าจะแสดงปุ่ม "กดชื่อตัวเอง" ไหม (ไม่เปิดเผยรหัส) */
+authRouter.get('/roster/status', h((_req, res) => {
+  const cfg = trialConfig();
+  res.json({ enabled: !!cfg.enabled, requiresAccessCode: !!String(cfg.accessCode ?? '').trim() });
+}));
+
+/** รายชื่อห้องเรียนที่เปิดให้ทดลอง (ยังไม่แสดงชื่อนักเรียน) */
+authRouter.post('/roster/classrooms', rosterLimiter, h((req, res) => {
+  const cfg = requireTrial(req.body?.accessCode);
+  const ids = Array.isArray(cfg.classroomIds) ? cfg.classroomIds : [];
+
+  const rows = ids.length
+    ? all(
+        `SELECT cl.id, cl.name, COUNT(s.id) AS student_count
+           FROM classrooms cl LEFT JOIN students s ON s.classroom_id = cl.id AND s.active = 1
+          WHERE cl.id IN (${ids.map(() => '?').join(',')})
+          GROUP BY cl.id ORDER BY cl.name`,
+        ids,
+      )
+    : [];
+
+  res.json({ classrooms: rows });
+}));
+
+/** รายชื่อนักเรียนในห้องที่เลือก — ชื่อกับสถานะตั้งรหัสเท่านั้น ไม่มีข้อมูลอื่นเลย */
+authRouter.post('/roster/students', rosterLimiter, h((req, res) => {
+  const cfg = requireTrial(req.body?.accessCode);
+  const classroomId = int(req.body?.classroomId, 'ห้องเรียน');
+  const ids = Array.isArray(cfg.classroomIds) ? cfg.classroomIds : [];
+  if (!ids.includes(classroomId)) throw forbidden('ห้องนี้ยังไม่ได้เปิดให้ทดลอง');
+
+  const rows = all(
+    `SELECT s.id, s.display_name, u.self_pin_set
+       FROM students s JOIN users u ON u.id = s.user_id
+      WHERE s.classroom_id = ? AND s.active = 1 AND u.active = 1
+      ORDER BY s.display_name`,
+    [classroomId],
+  );
+
+  res.json({
+    students: rows.map((r) => ({
+      id: r.id,
+      displayName: r.display_name,
+      claimed: !!r.self_pin_set,
+    })),
+  });
+}));
+
+/**
+ * เข้าระบบด้วยรายชื่อ
+ *  - ยังไม่เคยตั้งรหัส  → ตั้งรหัสใหม่ (ต้องส่ง confirmPin มาด้วย)
+ *  - ตั้งรหัสแล้ว       → ตรวจรหัส
+ */
+authRouter.post('/roster/enter', rosterLimiter, h((req, res) => {
+  const cfg = requireTrial(req.body?.accessCode);
+  const studentId = int(req.body?.studentId, 'นักเรียน');
+  const pin = str(req.body?.pin, 'รหัส', { max: 20, trim: true });
+
+  if (!/^\d{4,6}$/.test(pin)) throw bad('รหัสต้องเป็นตัวเลข 4–6 หลัก');
+
+  const row = get(
+    `SELECT s.id AS student_id, s.classroom_id, u.*
+       FROM students s JOIN users u ON u.id = s.user_id
+      WHERE s.id = ? AND s.active = 1 AND u.active = 1`,
+    [studentId],
+  );
+  if (!row) throw notFound('ไม่พบนักเรียนคนนี้');
+
+  const ids = Array.isArray(cfg.classroomIds) ? cfg.classroomIds : [];
+  if (!ids.includes(row.classroom_id)) throw forbidden('ห้องนี้ยังไม่ได้เปิดให้ทดลอง');
+
+  if (row.locked_until && new Date(`${row.locked_until.replace(' ', 'T')}Z`) > new Date()) {
+    throw new AppError(429, `ใส่รหัสผิดหลายครั้ง กรุณารออีก ${LOCK_MINUTES} นาที แล้วลองใหม่`, 'LOCKED');
+  }
+
+  // ── ครั้งแรก: ตั้งรหัสของตัวเอง ──────────────────────────
+  if (!row.self_pin_set) {
+    const confirm = str(req.body?.confirmPin, 'ยืนยันรหัส', { max: 20, trim: true });
+    if (pin !== confirm) throw bad('รหัสสองช่องไม่ตรงกัน ลองใหม่อีกครั้ง');
+    if (/^(\d)\1+$/.test(pin)) throw bad('อย่าใช้เลขซ้ำกันทั้งหมด เช่น 1111 — เดาง่ายเกินไป');
+    if (['1234', '0000', '12345', '123456'].includes(pin)) throw bad('รหัสนี้เดาง่ายเกินไป ลองเลขอื่นดู');
+
+    run(
+      `UPDATE users SET password_hash = ?, self_pin_set = 1, must_change_password = 0,
+                        failed_logins = 0, locked_until = NULL, last_login_at = datetime('now')
+         WHERE id = ?`,
+      [hashPassword(pin), row.id],
+    );
+    audit({ ...req, user: row }, 'roster.claim', { entity: 'student', entityId: studentId });
+
+    return res.json({
+      token: signToken({ sub: row.id, role: row.role }),
+      user: publicUser({ ...row, must_change_password: 0 }),
+      claimed: true,
+    });
+  }
+
+  // ── ครั้งต่อไป: ตรวจรหัส ────────────────────────────────
+  if (!verifyPassword(pin, row.password_hash)) {
+    const failed = row.failed_logins + 1;
+    run(
+      `UPDATE users SET failed_logins = ?,
+              locked_until = CASE WHEN ? >= ? THEN datetime('now', '+${LOCK_MINUTES} minutes') ELSE locked_until END
+         WHERE id = ?`,
+      [failed, failed, MAX_ATTEMPTS, row.id],
+    );
+    audit(req, 'roster.failed', { entity: 'student', entityId: studentId });
+    throw unauthorized('รหัสไม่ถูกต้อง — ถ้าลืมรหัส บอกครูให้ตั้งใหม่ให้ได้');
+  }
+
+  run(
+    `UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = datetime('now') WHERE id = ?`,
+    [row.id],
+  );
+  audit({ ...req, user: row }, 'roster.login', { entity: 'student', entityId: studentId });
+
+  res.json({
+    token: signToken({ sub: row.id, role: row.role }),
+    user: publicUser(row),
+    claimed: false,
+  });
 }));
 
 function publicUser(user) {

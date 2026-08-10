@@ -73,6 +73,8 @@ const state = {
   caseEvents: [] as AnyRec[],
   lifeskillProgress: [] as AnyRec[],
   auditLog: [] as AnyRec[],
+  // โหมดทดลอง — เปิดไว้ในหน้าสาธิตเพื่อให้ลองกดชื่อได้ทันที
+  trial: { enabled: true, accessCode: 'DEMO', classroomIds: [1, 2] },
   settings: {
     school: {
       name: 'โรงเรียนตัวอย่าง (ข้อมูลสมมติ)',
@@ -361,6 +363,55 @@ export async function demoRequest(path: string, method: string, body: any): Prom
   }
   if (key === 'POST /auth/change-password') return ok({ ok: true });
 
+  // ── โหมดทดลอง: กดชื่อตัวเอง ───────────────────────────────
+  if (key === 'GET /auth/roster/status') {
+    return ok({ enabled: state.trial.enabled, requiresAccessCode: !!state.trial.accessCode });
+  }
+  if (key === 'POST /auth/roster/classrooms') {
+    need(state.trial.enabled, 'ยังไม่ได้เปิดโหมดทดลอง', 403);
+    need(String(body?.accessCode ?? '').trim().toUpperCase() === state.trial.accessCode,
+      'รหัสเข้าโรงเรียนไม่ถูกต้อง — ในโหมดสาธิตใช้รหัส DEMO', 401);
+    return ok({
+      classrooms: classrooms
+        .filter((c) => state.trial.classroomIds.includes(c.id))
+        .map((c) => ({ ...c, student_count: students.filter((s) => s.classroom_id === c.id).length })),
+    });
+  }
+  if (key === 'POST /auth/roster/students') {
+    need(state.trial.enabled, 'ยังไม่ได้เปิดโหมดทดลอง', 403);
+    need(String(body?.accessCode ?? '').trim().toUpperCase() === state.trial.accessCode, 'รหัสเข้าโรงเรียนไม่ถูกต้อง', 401);
+    const cid = Number(body?.classroomId);
+    need(state.trial.classroomIds.includes(cid), 'ห้องนี้ยังไม่ได้เปิดให้ทดลอง', 403);
+    return ok({
+      students: students.filter((s) => s.classroom_id === cid).map((s) => ({
+        id: s.id, displayName: s.display_name, claimed: !!s.self_pin_set,
+      })),
+    });
+  }
+  if (key === 'POST /auth/roster/enter') {
+    need(state.trial.enabled, 'ยังไม่ได้เปิดโหมดทดลอง', 403);
+    need(String(body?.accessCode ?? '').trim().toUpperCase() === state.trial.accessCode, 'รหัสเข้าโรงเรียนไม่ถูกต้อง', 401);
+    const s = students.find((x) => x.id === Number(body?.studentId));
+    need(s, 'ไม่พบนักเรียนคนนี้', 404);
+    const pin = String(body?.pin ?? '');
+    need(/^\d{4,6}$/.test(pin), 'รหัสต้องเป็นตัวเลข 4–6 หลัก');
+
+    if (!s!.self_pin_set) {
+      need(pin === String(body?.confirmPin ?? ''), 'รหัสสองช่องไม่ตรงกัน ลองใหม่อีกครั้ง');
+      need(!/^(\d)\1+$/.test(pin), 'อย่าใช้เลขซ้ำกันทั้งหมด เช่น 1111 — เดาง่ายเกินไป');
+      need(!['1234', '0000', '12345', '123456'].includes(pin), 'รหัสนี้เดาง่ายเกินไป ลองเลขอื่นดู');
+      s!.self_pin_set = 1;
+      s!.pin = pin;
+    } else {
+      need(s!.pin === pin, 'รหัสไม่ถูกต้อง — ถ้าลืมรหัส บอกครูให้ตั้งใหม่ให้ได้', 401);
+    }
+
+    const u = users.find((x) => x.id === s!.user_id)!;
+    state.session = u;
+    audit('roster.login', 'student', s!.id);
+    return ok({ token: `demo.${u.id}`, user: publicUser(u), claimed: !s!.self_pin_set });
+  }
+
   // ── เช็กอิน ───────────────────────────────────────────────
   if (key === 'GET /checkin/templates') {
     return ok({ template: q.get('cadence') === 'daily' ? dailyCheckin : weeklyCheckin, followUps });
@@ -370,7 +421,23 @@ export async function demoRequest(path: string, method: string, body: any): Prom
   }
   if (key === 'GET /checkin/mine') {
     const s = currentStudent();
-    return ok({ checkins: state.checkins.filter((c) => c.student_id === s?.id).map((c) => ({ id: c.id, template_id: c.template_id, submitted_at: c.submitted_at })) });
+    const mine = state.checkins.filter((c) => c.student_id === s?.id);
+    const OFFSET = 420 * 60000;
+    const dayKey = (sql: string) => new Date(new Date(`${sql.replace(' ', 'T')}Z`).getTime() + OFFSET).toISOString().slice(0, 10);
+    const days = new Set(mine.map((c) => dayKey(c.submitted_at)));
+    const todayKey = new Date(Date.now() + OFFSET).toISOString().slice(0, 10);
+    let streak = 0;
+    for (let i = 0; i < 400; i++) {
+      const d = new Date(Date.now() + OFFSET - i * 86400000).toISOString().slice(0, 10);
+      if (days.has(d)) streak += 1;
+      else if (i > 0 || !days.has(todayKey)) break;
+    }
+    return ok({
+      checkins: mine.map((c) => ({ id: c.id, template_id: c.template_id, submitted_at: c.submitted_at })).slice(0, 30),
+      doneToday: days.has(todayKey),
+      streak,
+      daysDone: [...days].sort().reverse().slice(0, 30),
+    });
   }
   if (key === 'POST /checkin/submit') {
     const s = currentStudent();
@@ -713,6 +780,28 @@ export async function demoRequest(path: string, method: string, body: any): Prom
 
   // ── ผู้ดูแลระบบ ───────────────────────────────────────────
   if (key === 'GET /admin/users') return ok({ users: users.filter((u) => u.role !== 'student').map(publicRow) });
+  if (key === 'GET /admin/trial') {
+    return ok({
+      trial: state.trial,
+      progress: classrooms.map((c) => {
+        const inRoom = students.filter((s) => s.classroom_id === c.id);
+        return { id: c.id, name: c.name, total: inRoom.length, claimed: inRoom.filter((s) => s.self_pin_set).length };
+      }),
+    });
+  }
+  if (key === 'PUT /admin/trial') {
+    state.trial = {
+      enabled: !!body?.enabled,
+      accessCode: String(body?.accessCode ?? '').trim().toUpperCase(),
+      classroomIds: Array.isArray(body?.classroomIds) ? body.classroomIds.map(Number) : [],
+    };
+    return ok();
+  }
+  if (seg[0] === 'admin' && seg[1] === 'students' && seg[3] === 'reset-pin' && method === 'POST') {
+    const s = students.find((x) => x.id === Number(seg[2]));
+    if (s) { s.self_pin_set = 0; s.pin = null; }
+    return ok({ ok: true, message: `${s?.display_name ?? 'นักเรียน'} ตั้งรหัสใหม่ได้แล้วในการเข้าครั้งถัดไป` });
+  }
   if (key === 'GET /admin/audit') return ok({ entries: state.auditLog.slice(0, Number(q.get('limit') ?? 100)) });
   if (key === 'GET /admin/settings') {
     return ok({ school: state.settings.school, notify: state.settings.notifyWebhookUrl, consent: DEMO_CONSENT, retention: { checkinDays: 365, closedCaseDays: 1095, auditDays: 1095 }, llmEnabled: false });

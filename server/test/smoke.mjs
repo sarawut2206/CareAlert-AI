@@ -171,6 +171,90 @@ check('ผู้บริหารค้นหานักเรียนรา�
 
 // 11) ผู้ดูแลเห็น audit log
 const adminToken = await login('admin', 'admin1234');
+
+// ── โหมดทดลอง: กดชื่อตัวเอง แล้วตั้ง PIN เอง ─────────────────
+const beforeOn = await api('/api/auth/roster/status');
+check('โหมดทดลองปิดอยู่โดยค่าเริ่มต้น', beforeOn.data.enabled === false);
+
+const noCode = await api('/api/admin/trial', {
+  token: adminToken, method: 'PUT', body: { enabled: true, accessCode: '', classroomIds: [1] },
+});
+check('เปิดโหมดทดลองโดยไม่ตั้งรหัสโรงเรียน → ถูกปฏิเสธ', noCode.status === 400, `ได้ ${noCode.status}`);
+
+await api('/api/admin/trial', {
+  token: adminToken, method: 'PUT',
+  body: { enabled: true, accessCode: 'TEST2569', classroomIds: [1] },
+});
+
+const wrongCode = await api('/api/auth/roster/classrooms', { method: 'POST', body: { accessCode: 'ผิด' } });
+check('รหัสเข้าโรงเรียนผิด → ไม่เห็นรายชื่อ', wrongCode.status === 401, `ได้ ${wrongCode.status}`);
+
+const rooms = await api('/api/auth/roster/classrooms', { method: 'POST', body: { accessCode: 'TEST2569' } });
+check('รหัสถูก → เห็นเฉพาะห้องที่เปิดทดลอง', rooms.data.classrooms?.length === 1, JSON.stringify(rooms.data));
+
+const roster = await api('/api/auth/roster/students', {
+  method: 'POST', body: { accessCode: 'TEST2569', classroomId: rooms.data.classrooms[0].id },
+});
+check('เห็นรายชื่อนักเรียนในห้อง', roster.data.students?.length > 0);
+check('รายชื่อมีแค่ชื่อกับสถานะตั้งรหัส ไม่มีข้อมูลอื่น',
+  Object.keys(roster.data.students[0]).sort().join(',') === 'claimed,displayName,id',
+  Object.keys(roster.data.students[0]).join(','));
+
+const closedRoom = await api('/api/auth/roster/students', {
+  method: 'POST', body: { accessCode: 'TEST2569', classroomId: 2 },
+});
+check('ห้องที่ไม่ได้เปิดทดลอง → เข้าไม่ได้', closedRoom.status === 403, `ได้ ${closedRoom.status}`);
+
+const target = roster.data.students[0];
+const weakPin = await api('/api/auth/roster/enter', {
+  method: 'POST', body: { accessCode: 'TEST2569', studentId: target.id, pin: '1111', confirmPin: '1111' },
+});
+check('รหัสเดาง่าย (1111) → ถูกปฏิเสธ', weakPin.status === 400, `ได้ ${weakPin.status}`);
+
+const mismatch = await api('/api/auth/roster/enter', {
+  method: 'POST', body: { accessCode: 'TEST2569', studentId: target.id, pin: '2847', confirmPin: '2848' },
+});
+check('รหัสสองช่องไม่ตรงกัน → ถูกปฏิเสธ', mismatch.status === 400);
+
+const claim = await api('/api/auth/roster/enter', {
+  method: 'POST', body: { accessCode: 'TEST2569', studentId: target.id, pin: '2847', confirmPin: '2847' },
+});
+check('ตั้งรหัสครั้งแรกแล้วเข้าใช้งานได้', !!claim.data.token, JSON.stringify(claim.data).slice(0, 120));
+
+const roster2 = await api('/api/auth/roster/students', {
+  method: 'POST', body: { accessCode: 'TEST2569', classroomId: rooms.data.classrooms[0].id },
+});
+check('สถานะเปลี่ยนเป็น "ตั้งรหัสแล้ว"',
+  roster2.data.students.find((s) => s.id === target.id)?.claimed === true);
+
+const impersonate = await api('/api/auth/roster/enter', {
+  method: 'POST', body: { accessCode: 'TEST2569', studentId: target.id, pin: '9999', confirmPin: '9999' },
+});
+check('เพื่อนกดชื่อคนที่ตั้งรหัสแล้ว → เข้าไม่ได้', impersonate.status === 401, `ได้ ${impersonate.status}`);
+
+const reLogin = await api('/api/auth/roster/enter', {
+  method: 'POST', body: { accessCode: 'TEST2569', studentId: target.id, pin: '2847' },
+});
+check('เจ้าตัวใส่รหัสถูก → เข้าได้', !!reLogin.data.token);
+
+const mine = await api('/api/checkin/mine', { token: reLogin.data.token });
+check('หน้าหลักรู้ว่าวันนี้เช็กอินหรือยัง',
+  typeof mine.data.doneToday === 'boolean' && typeof mine.data.streak === 'number');
+
+await api(`/api/admin/students/${target.id}/reset-pin`, { token: adminToken, method: 'POST' });
+const afterReset = await api('/api/auth/roster/students', {
+  method: 'POST', body: { accessCode: 'TEST2569', classroomId: rooms.data.classrooms[0].id },
+});
+check('ครูล้างรหัสให้ได้เมื่อนักเรียนลืม',
+  afterReset.data.students.find((s) => s.id === target.id)?.claimed === false);
+
+// ปิดโหมดทดลองกลับ เพื่อไม่ให้ค้างสถานะไว้
+await api('/api/admin/trial', {
+  token: adminToken, method: 'PUT', body: { enabled: false, accessCode: 'TEST2569', classroomIds: [] },
+});
+const offAgain = await api('/api/auth/roster/classrooms', { method: 'POST', body: { accessCode: 'TEST2569' } });
+check('ปิดโหมดทดลองแล้ว รายชื่อปิดทันที', offAgain.status === 403, `ได้ ${offAgain.status}`);
+
 const auditLog = await api('/api/admin/audit?limit=20', { token: adminToken });
 check('มีร่องรอยการเข้าถึงข้อมูล (audit log)', auditLog.data.entries?.length > 0);
 check('การเปิดดูเคสถูกบันทึกไว้', auditLog.data.entries.some((e) => e.action === 'case.view'));

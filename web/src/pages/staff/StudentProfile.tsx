@@ -100,6 +100,15 @@ export default function StudentProfile() {
             </div>
           </div>
 
+          <div className="card">
+            <h3>นักเรียนลืมรหัส</h3>
+            <p className="small muted">
+              ล้างรหัสที่นักเรียนตั้งไว้ เพื่อให้ตั้งใหม่ได้ในการกดชื่อครั้งถัดไป
+              (ใช้ในโหมดทดลองที่เข้าด้วยการกดชื่อ)
+            </p>
+            <ResetPinButton studentId={id!} />
+          </div>
+
           {(s.guardian_name || s.guardian_phone) && (
             <div className="card">
               <h3>ผู้ปกครอง</h3>
@@ -112,6 +121,33 @@ export default function StudentProfile() {
       </div>
     </div>
   );
+}
+
+function ResetPinButton({ studentId }: { studentId: string }) {
+  const [state, setState] = useState<'idle' | 'confirm' | 'done'>('idle');
+  const [msg, setMsg] = useState('');
+
+  async function reset() {
+    try {
+      const r = await api<{ message: string }>(`/admin/students/${studentId}/reset-pin`, { method: 'POST' });
+      setMsg(r.message);
+      setState('done');
+    } catch (e: any) {
+      setMsg(e.message);
+      setState('done');
+    }
+  }
+
+  if (state === 'done') return <Alert kind="success">{msg}</Alert>;
+  if (state === 'confirm') {
+    return (
+      <div className="row" style={{ gap: '.4rem' }}>
+        <button className="btn danger sm" onClick={reset}>ยืนยันล้างรหัส</button>
+        <button className="btn ghost sm" onClick={() => setState('idle')}>ยกเลิก</button>
+      </div>
+    );
+  }
+  return <button className="btn ghost sm" onClick={() => setState('confirm')}>ล้างรหัสให้ตั้งใหม่</button>;
 }
 
 function TrendTable({ trend }: { trend: any[] }) {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, thaiDateTime } from '../../api';
 import { Spinner, Alert } from '../../components/ui';
 
-type Tab = 'users' | 'students' | 'classrooms' | 'settings' | 'audit' | 'retention';
+type Tab = 'users' | 'students' | 'classrooms' | 'trial' | 'settings' | 'audit' | 'retention';
 
 export default function Admin() {
   const [tab, setTab] = useState<Tab>('users');
@@ -14,6 +14,7 @@ export default function Admin() {
         <div className="row" style={{ gap: '.35rem' }}>
           {([
             ['users', 'บุคลากร'], ['students', 'นำเข้านักเรียน'], ['classrooms', 'ห้องเรียน'],
+            ['trial', 'โหมดทดลอง'],
             ['settings', 'ตั้งค่า'], ['audit', 'ร่องรอยการใช้งาน'], ['retention', 'นโยบายเก็บข้อมูล'],
           ] as [Tab, string][]).map(([v, l]) => (
             <button key={v} className={`btn sm ${tab === v ? '' : 'ghost'}`} onClick={() => setTab(v)}>{l}</button>
@@ -24,6 +25,7 @@ export default function Admin() {
       {tab === 'users' && <Users />}
       {tab === 'students' && <ImportStudents />}
       {tab === 'classrooms' && <Classrooms />}
+      {tab === 'trial' && <Trial />}
       {tab === 'settings' && <Settings />}
       {tab === 'audit' && <AuditLog />}
       {tab === 'retention' && <Retention />}
@@ -241,6 +243,115 @@ function Classrooms() {
                 </td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────── โหมดทดลอง ───────────────────────────
+
+function Trial() {
+  const [data, setData] = useState<any>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [code, setCode] = useState('');
+  const [selected, setSelected] = useState<number[]>([]);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => api('/admin/trial').then((d: any) => {
+    setData(d);
+    setEnabled(!!d.trial.enabled);
+    setCode(d.trial.accessCode ?? '');
+    setSelected(d.trial.classroomIds ?? []);
+  }).catch((e) => setError(e.message));
+
+  useEffect(() => { load(); }, []);
+
+  async function save() {
+    setError(null); setMsg(null);
+    try {
+      await api('/admin/trial', { method: 'PUT', body: { enabled, accessCode: code, classroomIds: selected } });
+      setMsg('บันทึกแล้ว');
+      load();
+    } catch (e: any) { setError(e.message); }
+  }
+
+  if (!data) return <Spinner />;
+
+  const toggle = (id: number) =>
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  return (
+    <>
+      {msg && <Alert kind="success">{msg}</Alert>}
+      {error && <Alert kind="error">{error}</Alert>}
+
+      <div className="card">
+        <h2>โหมดทดลอง — นักเรียนกดชื่อตัวเองเข้าใช้งาน</h2>
+        <p className="small muted">
+          เหมาะกับช่วงทดลองที่ยังไม่อยากแจกกระดาษรหัสผ่านหลายร้อยใบ
+          นักเรียนกดชื่อตัวเองจากรายชื่อห้อง แล้ว<strong>ตั้งรหัส 4–6 หลักของตัวเองในการเข้าครั้งแรก</strong>
+        </p>
+
+        <div className="alert warn">
+          <strong>ควรให้ครูอยู่ด้วยตอนตั้งรหัสครั้งแรก</strong> — ช่วงก่อนที่แต่ละคนจะตั้งรหัส
+          ใครก็กดชื่อคนนั้นได้ ทางที่ปลอดภัยคือให้ทั้งห้องตั้งพร้อมกันในคาบเดียว
+          แล้วดูความคืบหน้าด้านล่างว่าครบหรือยัง
+        </div>
+
+        <label className="row" style={{ gap: '.5rem', alignItems: 'center', marginBottom: '1rem' }}>
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} style={{ width: 'auto' }} />
+          <span><strong>เปิดโหมดทดลอง</strong></span>
+        </label>
+
+        <div className="field">
+          <label>รหัสเข้าโรงเรียน</label>
+          <div className="hint">
+            ครูเขียนบนกระดานให้นักเรียนกรอกครั้งเดียวต่อเครื่อง —
+            มีไว้กันไม่ให้รายชื่อนักเรียนจริงเปิดสู่อินเทอร์เน็ต เปลี่ยนได้ทุกเมื่อ
+          </div>
+          <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="เช่น NK2569" maxLength={32} />
+        </div>
+
+        <div className="field">
+          <label>ห้องที่เปิดให้ทดลอง ({selected.length} ห้อง)</label>
+          <div className="hint">แนะนำให้เริ่มจาก 1–2 ห้องก่อน แล้วค่อยขยาย</div>
+          <div className="row" style={{ gap: '.35rem' }}>
+            {data.progress.map((c: any) => (
+              <button key={c.id} type="button"
+                className={`btn sm ${selected.includes(c.id) ? '' : 'ghost'}`}
+                onClick={() => toggle(c.id)}>
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button className="btn" onClick={save}>บันทึก</button>
+      </div>
+
+      <div className="card flush">
+        <table className="data">
+          <thead><tr><th>ห้อง</th><th>นักเรียน</th><th>ตั้งรหัสแล้ว</th><th>ความคืบหน้า</th></tr></thead>
+          <tbody>
+            {data.progress.filter((c: any) => c.total > 0).map((c: any) => {
+              const pct = c.total ? Math.round((c.claimed / c.total) * 100) : 0;
+              return (
+                <tr key={c.id}>
+                  <td>{c.name}{selected.includes(c.id) && <span className="tag" style={{ marginLeft: '.4rem' }}>เปิดทดลอง</span>}</td>
+                  <td>{c.total}</td>
+                  <td>{c.claimed}</td>
+                  <td style={{ minWidth: 140 }}>
+                    <span className="track" style={{ display: 'inline-block', width: '70%', height: 8, background: '#eceff3', borderRadius: 999, overflow: 'hidden', verticalAlign: 'middle' }}>
+                      <span style={{ display: 'block', height: '100%', width: `${pct}%`, background: pct === 100 ? 'var(--green-600)' : 'var(--blue-500)' }} />
+                    </span>
+                    <span className="small muted" style={{ marginLeft: '.4rem' }}>{pct}%</span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

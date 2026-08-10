@@ -4,21 +4,29 @@ import { api, thaiDateTime } from '../../api';
 import { useAuth } from '../../auth';
 import { InstallPrompt } from '../../components/InstallPrompt';
 
+type MineResponse = {
+  checkins: { submitted_at: string }[];
+  doneToday: boolean;
+  streak: number;
+  daysDone: string[];
+};
+
 export default function StudentHome() {
   const { user } = useAuth();
-  const [lastCheckin, setLastCheckin] = useState<string | null>(null);
+  const [mine, setMine] = useState<MineResponse | null>(null);
   const [consent, setConsent] = useState<any>(null);
   const [showConsent, setShowConsent] = useState(false);
 
   useEffect(() => {
-    api<{ checkins: { submitted_at: string }[] }>('/checkin/mine')
-      .then((d) => setLastCheckin(d.checkins?.[0]?.submitted_at ?? null))
-      .catch(() => {});
+    api<MineResponse>('/checkin/mine').then(setMine).catch(() => {});
     api<{ consent: any }>('/meta/consent').then((d) => setConsent(d.consent)).catch(() => {});
   }, []);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'สวัสดีตอนเช้า' : hour < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น';
+  const lastCheckin = mine?.checkins?.[0]?.submitted_at ?? null;
+  const doneToday = mine?.doneToday ?? false;
+  const streak = mine?.streak ?? 0;
 
   return (
     <div className="container">
@@ -30,6 +38,26 @@ export default function StudentHome() {
             : 'ยังไม่เคยเช็กอิน ลองเริ่มจากคำถามสั้น ๆ ดูไหม'}
         </p>
       </div>
+
+      {/* สถานะประจำวัน — ชวนทำทุกวันโดยไม่กดดัน ไม่มีคะแนน ไม่มีการเปรียบเทียบกับใคร */}
+      {mine && (
+        <div className="card" style={doneToday
+          ? { borderColor: '#a8dcc0', background: 'var(--green-100)' }
+          : { borderColor: '#f6cdb0', background: 'var(--orange-100)' }}>
+          <div className="row between" style={{ gap: '.6rem', alignItems: 'center' }}>
+            <div style={{ flex: 1 }}>
+              <strong>{doneToday ? '✅ วันนี้เช็กอินแล้ว ขอบคุณนะ' : '☀️ วันนี้ยังไม่ได้เช็กอิน'}</strong>
+              <div className="small muted" style={{ marginTop: '.15rem' }}>
+                {streak >= 2
+                  ? `ทำต่อเนื่องมา ${streak} วันแล้ว`
+                  : doneToday ? 'พรุ่งนี้แวะมาอีกได้นะ' : 'ใช้เวลาแค่ 30 วินาที'}
+              </div>
+            </div>
+            {!doneToday && <Link to="/checkin?cadence=daily" className="btn warm">เช็กอินเลย</Link>}
+          </div>
+          {mine.daysDone.length > 0 && <WeekDots daysDone={mine.daysDone} />}
+        </div>
+      )}
 
       <div className="tiles" style={{ marginBottom: '1rem' }}>
         <Link to="/checkin?cadence=daily" className="tile">
@@ -86,6 +114,38 @@ export default function StudentHome() {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+/** 7 วันล่าสุด — แสดงว่าทำวันไหนไปแล้วบ้าง ไม่ใช่การให้คะแนนหรือเทียบกับใคร */
+function WeekDots({ daysDone }: { daysDone: string[] }) {
+  const done = new Set(daysDone);
+  const labels = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(Date.now() - (6 - i) * 86400000);
+    return { key: d.toISOString().slice(0, 10), label: labels[d.getDay()] };
+  });
+
+  return (
+    <div className="row" style={{ gap: '.4rem', marginTop: '.7rem', justifyContent: 'space-between' }}>
+      {days.map((d) => (
+        <div key={d.key} className="center" style={{ flex: 1 }}>
+          <div
+            aria-label={done.has(d.key) ? `${d.label} เช็กอินแล้ว` : `${d.label} ยังไม่ได้เช็กอิน`}
+            style={{
+              width: 26, height: 26, borderRadius: '50%', margin: '0 auto',
+              display: 'grid', placeItems: 'center', fontSize: '.75rem', fontWeight: 700,
+              background: done.has(d.key) ? 'var(--green-600)' : '#fff',
+              color: done.has(d.key) ? '#fff' : 'var(--ink-mute)',
+              border: `1.5px solid ${done.has(d.key) ? 'var(--green-600)' : 'var(--line)'}`,
+            }}
+          >
+            {done.has(d.key) ? '✓' : ''}
+          </div>
+          <div className="small muted" style={{ fontSize: '.7rem', marginTop: '.15rem' }}>{d.label}</div>
+        </div>
+      ))}
     </div>
   );
 }

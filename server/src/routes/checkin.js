@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { get, run, all } from '../db.js';
+import { config } from '../config.js';
 import { h, bad, str, plainObject, oneOf, forbidden } from '../lib/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/ratelimit.js';
@@ -43,14 +44,38 @@ checkinRouter.post('/follow-ups', requireAuth(), h((req, res) => {
   res.json({ followUps: ids.map((id) => getTemplate(id)).filter(Boolean) });
 }));
 
-/** ประวัติเช็กอินของตัวเอง (นักเรียนเห็นของตัวเองได้ แต่ไม่เห็นระดับหรือคะแนน) */
+/**
+ * ประวัติเช็กอินของตัวเอง (นักเรียนเห็นของตัวเองได้ แต่ไม่เห็นระดับหรือคะแนน)
+ * ส่ง "วันนี้ทำหรือยัง" และ "ทำต่อเนื่องกี่วัน" มาด้วย เพื่อให้หน้าหลักชวนทำทุกวันได้
+ */
 checkinRouter.get('/mine', requireAuth('student'), h((req, res) => {
   const rows = all(
     `SELECT id, template_id, submitted_at FROM checkins
-      WHERE student_id = ? ORDER BY submitted_at DESC LIMIT 30`,
+      WHERE student_id = ? ORDER BY submitted_at DESC LIMIT 120`,
     [req.student.id],
   );
-  res.json({ checkins: rows });
+
+  // แปลงเป็นวันตามเวลาไทย (ฐานข้อมูลเก็บเป็น UTC)
+  const OFFSET = config.timezone * 60000;
+  const dayKey = (sql) => new Date(new Date(`${sql.replace(' ', 'T')}Z`).getTime() + OFFSET)
+    .toISOString().slice(0, 10);
+
+  const days = new Set(rows.map((r) => dayKey(r.submitted_at)));
+  const todayKey = new Date(Date.now() + OFFSET).toISOString().slice(0, 10);
+
+  let streak = 0;
+  for (let i = 0; i < 400; i++) {
+    const d = new Date(Date.now() + OFFSET - i * 86400000).toISOString().slice(0, 10);
+    if (days.has(d)) streak += 1;
+    else if (i > 0 || !days.has(todayKey)) break; // ยังไม่ทำวันนี้ ไม่ตัดสตรีคทันที
+  }
+
+  res.json({
+    checkins: rows.slice(0, 30),
+    doneToday: days.has(todayKey),
+    streak,
+    daysDone: [...days].sort().reverse().slice(0, 30),
+  });
 }));
 
 // ─────────────────────────── ส่งเช็กอิน ───────────────────────────

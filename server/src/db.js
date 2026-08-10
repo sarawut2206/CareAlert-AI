@@ -36,6 +36,18 @@ db.exec(schemaText);
   }
 }
 
+/**
+ * Migration: คอลัมน์สำหรับ "โหมดทดลอง — กดชื่อตัวเองแล้วตั้งรหัสเอง"
+ * self_pin_set = 1 แปลว่านักเรียนตั้งรหัสของตัวเองแล้ว (ไม่ใช่รหัสที่ระบบสุ่มให้ตอนนำเข้า)
+ */
+{
+  const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+  if (!cols.includes('self_pin_set')) {
+    db.exec('ALTER TABLE users ADD COLUMN self_pin_set INTEGER NOT NULL DEFAULT 0');
+    console.log('[migration] เพิ่มคอลัมน์ self_pin_set แล้ว');
+  }
+}
+
 /** SELECT หลายแถว */
 export function all(sql, params = []) {
   return db.prepare(sql).all(...params);

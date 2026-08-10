@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../auth';
-import { DEMO_MODE } from '../api';
+import { api, DEMO_MODE } from '../api';
 import { HelpButton } from '../components/HelpButton';
 import { InstallPrompt } from '../components/InstallPrompt';
+import RosterLogin from './RosterLogin';
 
 const DEMO_ACCOUNTS = [
   { label: 'นักเรียน', username: '30101', password: '123456', hint: 'ลองเช็กอิน เล่าเรื่อง แจ้งเป็นห่วงเพื่อน' },
@@ -18,6 +19,14 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rosterEnabled, setRosterEnabled] = useState(false);
+  const [showRoster, setShowRoster] = useState(false);
+
+  useEffect(() => {
+    api<{ enabled: boolean }>('/auth/roster/status')
+      .then((d) => setRosterEnabled(!!d.enabled))
+      .catch(() => setRosterEnabled(false));
+  }, []);
 
   async function quickLogin(u: string, p: string) {
     setError(null);
@@ -36,6 +45,15 @@ export default function Login() {
     await quickLogin(username, password);
   }
 
+  if (showRoster) {
+    return (
+      <div className="app">
+        <RosterLogin onBack={() => setShowRoster(false)} />
+        <HelpButton />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <div className="container" style={{ maxWidth: 420, paddingTop: '2.5rem' }}>
@@ -49,7 +67,20 @@ export default function Login() {
           <p className="muted small" style={{ marginTop: '-.5rem' }}>ระบบสนับสนุนการดูแลช่วยเหลือนักเรียน</p>
         </div>
 
+        {rosterEnabled && (
+          <div className="card" style={{ borderColor: '#c9dcf5', background: 'var(--blue-50)' }}>
+            <h3 style={{ marginBottom: '.2rem' }}>นักเรียนเข้าตรงนี้</h3>
+            <p className="small muted">กดชื่อตัวเองจากรายชื่อห้อง ไม่ต้องจำรหัสประจำตัว</p>
+            <button className="btn block" onClick={() => setShowRoster(true)}>
+              👋 กดชื่อตัวเองเพื่อเข้าใช้งาน
+            </button>
+          </div>
+        )}
+
         <form className="card" onSubmit={submit}>
+          {rosterEnabled && (
+            <p className="small muted" style={{ marginTop: 0 }}>สำหรับครูและบุคลากร</p>
+          )}
           <div className="field">
             <label htmlFor="u">ชื่อผู้ใช้ / รหัสประจำตัวนักเรียน</label>
             <input
