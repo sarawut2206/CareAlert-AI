@@ -1,5 +1,12 @@
 node_modules/
 .claude/settings.local.json
+
+# ข้อมูลนักเรียนจริง — ห้ามขึ้น git เด็ดขาด
+*.xls
+*.xlsx
+*.csv
+*.report.txt
+รหัสผ่าน*.txt
 server/data/*.db
 server/data/*.db-journal
 server/data/*.db-wal
