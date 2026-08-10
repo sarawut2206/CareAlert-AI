@@ -2,7 +2,29 @@ import express from 'express';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { config } from './config.js';
-import './db.js';
+import { get, run } from './db.js';
+import { hashPassword } from './lib/crypto.js';
+
+/**
+ * Bootstrap การติดตั้งครั้งแรกบนโฮสต์: ฐานข้อมูลว่าง = ยังไม่มีใครล็อกอินได้เลย
+ * จึงสร้างบัญชีผู้ดูแลให้หนึ่งบัญชี และบังคับเปลี่ยนรหัสผ่านทันทีที่เข้าครั้งแรก
+ * ตั้งรหัสเริ่มต้นเองได้ผ่าน ADMIN_INITIAL_PASSWORD (แนะนำอย่างยิ่งบนโฮสต์สาธารณะ)
+ */
+{
+  const userCount = get('SELECT COUNT(*) AS n FROM users')?.n ?? 0;
+  if (userCount === 0) {
+    const initial = process.env.ADMIN_INITIAL_PASSWORD || 'admin1234';
+    run(
+      `INSERT INTO users (role, username, password_hash, display_name, must_change_password)
+       VALUES ('admin', 'admin', ?, 'ผู้ดูแลระบบ', 1)`,
+      [hashPassword(initial)],
+    );
+    console.log('[bootstrap] ฐานข้อมูลว่าง — สร้างบัญชี admin แล้ว');
+    if (!process.env.ADMIN_INITIAL_PASSWORD) {
+      console.warn('[bootstrap] ⚠️ ใช้รหัสเริ่มต้น admin1234 — เข้าระบบแล้วระบบจะบังคับเปลี่ยนทันที');
+    }
+  }
+}
 
 import { attachUser } from './middleware/auth.js';
 import { rateLimit } from './middleware/ratelimit.js';

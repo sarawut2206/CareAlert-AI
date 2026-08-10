@@ -1,0 +1,18 @@
+# ข้อมูลจริง — ห้ามเข้า image เด็ดขาด
+server/data/
+*.xls
+*.xlsx
+*.csv
+*.report.txt
+รหัสผ่าน*.txt
+server/.env
+
+# ของที่ build ใหม่ใน image อยู่แล้ว / ไม่จำเป็น
+node_modules/
+web/dist/
+web/dist-demo/
+.git/
+.claude/
+docs/
+scripts/
+*.md
