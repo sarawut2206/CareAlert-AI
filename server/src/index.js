@@ -6,23 +6,43 @@ import { get, run } from './db.js';
 import { hashPassword } from './lib/crypto.js';
 
 /**
- * Bootstrap การติดตั้งครั้งแรกบนโฮสต์: ฐานข้อมูลว่าง = ยังไม่มีใครล็อกอินได้เลย
+ * Bootstrap บัญชีผู้ดูแลระบบ
+ *
+ * ปัญหาที่แก้: ติดตั้งบนโฮสต์แล้วฐานข้อมูลว่าง = ไม่มีใครล็อกอินได้เลย
  * จึงสร้างบัญชีผู้ดูแลให้หนึ่งบัญชี และบังคับเปลี่ยนรหัสผ่านทันทีที่เข้าครั้งแรก
- * ตั้งรหัสเริ่มต้นเองได้ผ่าน ADMIN_INITIAL_PASSWORD (แนะนำอย่างยิ่งบนโฮสต์สาธารณะ)
+ *
+ * ตัวแปรที่เกี่ยวข้อง:
+ *   ADMIN_USERNAME          ชื่อผู้ใช้ของผู้ดูแล (ค่าเริ่มต้น admin)
+ *   ADMIN_INITIAL_PASSWORD  รหัสผ่านเริ่มต้น (แนะนำอย่างยิ่งบนโฮสต์สาธารณะ)
+ *   ADMIN_RESET=true        กู้รหัสผ่านเมื่อลืม — ตั้งรหัสใหม่ให้บัญชีนี้ตอนบูต
+ *                           ⚠️ ต้องลบตัวแปรนี้ทิ้งทันทีหลังเข้าระบบได้แล้ว
+ *                           มิฉะนั้นรหัสจะถูกตั้งกลับทุกครั้งที่ระบบรีสตาร์ต
  */
 {
+  const adminUser = String(process.env.ADMIN_USERNAME || 'admin').trim().toLowerCase();
+  const initial = process.env.ADMIN_INITIAL_PASSWORD || 'admin1234';
   const userCount = get('SELECT COUNT(*) AS n FROM users')?.n ?? 0;
-  if (userCount === 0) {
-    const initial = process.env.ADMIN_INITIAL_PASSWORD || 'admin1234';
+  const existing = get('SELECT id FROM users WHERE username = ?', [adminUser]);
+
+  if (userCount === 0 || (process.env.ADMIN_RESET === 'true' && !existing)) {
     run(
       `INSERT INTO users (role, username, password_hash, display_name, must_change_password)
-       VALUES ('admin', 'admin', ?, 'ผู้ดูแลระบบ', 1)`,
-      [hashPassword(initial)],
+       VALUES ('admin', ?, ?, 'ผู้ดูแลระบบ', 1)`,
+      [adminUser, hashPassword(initial)],
     );
-    console.log('[bootstrap] ฐานข้อมูลว่าง — สร้างบัญชี admin แล้ว');
+    console.log(`[bootstrap] สร้างบัญชีผู้ดูแลระบบ "${adminUser}" แล้ว`);
     if (!process.env.ADMIN_INITIAL_PASSWORD) {
       console.warn('[bootstrap] ⚠️ ใช้รหัสเริ่มต้น admin1234 — เข้าระบบแล้วระบบจะบังคับเปลี่ยนทันที');
     }
+  } else if (process.env.ADMIN_RESET === 'true' && existing) {
+    run(
+      `UPDATE users SET password_hash = ?, must_change_password = 1, active = 1,
+                        failed_logins = 0, locked_until = NULL
+         WHERE id = ?`,
+      [hashPassword(initial), existing.id],
+    );
+    console.warn(`[bootstrap] ⚠️ ADMIN_RESET เปิดอยู่ — ตั้งรหัสผ่านของ "${adminUser}" ใหม่แล้ว`);
+    console.warn('[bootstrap] ⚠️ ลบตัวแปร ADMIN_RESET ทิ้งทันทีหลังเข้าระบบได้');
   }
 }
 
