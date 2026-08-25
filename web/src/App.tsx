@@ -1,11 +1,13 @@
+import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { isExecutive, isStaff, useAuth } from './auth';
-import { DEMO_MODE } from './api';
+import { api, DEMO_MODE } from './api';
 import { Spinner } from './components/ui';
 import { HelpButton } from './components/HelpButton';
 import { DemoBanner } from './components/DemoBanner';
 
 import Login from './pages/Login';
+import FirstRunSetup from './pages/FirstRunSetup';
 import ChangePassword from './pages/ChangePassword';
 
 import StudentHome from './pages/student/StudentHome';
@@ -29,7 +31,17 @@ export default function App() {
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) return <div className="app"><Spinner /></div>;
+  // ยังไม่เคยมีใครเข้าระบบสำเร็จ = ยังตั้งค่าไม่เสร็จ ให้ขึ้นหน้าตั้งค่าครั้งแรกแทนหน้าเข้าสู่ระบบ
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (user) { setNeedsSetup(false); return; }
+    api<{ needsSetup: boolean }>('/auth/setup-status')
+      .then((d) => setNeedsSetup(!!d.needsSetup))
+      .catch(() => setNeedsSetup(false));
+  }, [user]);
+
+  if (loading || (!user && needsSetup === null)) return <div className="app"><Spinner /></div>;
+  if (!user && needsSetup) return <FirstRunSetup onDone={() => setNeedsSetup(false)} />;
   if (!user) return <><DemoBannerIfDemo /><Login /></>;
   if (user.mustChangePassword) return <ChangePassword />;
 

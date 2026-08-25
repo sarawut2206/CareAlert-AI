@@ -11,6 +11,80 @@ export const authRouter = Router();
 const MAX_ATTEMPTS = 8;
 const LOCK_MINUTES = 15;
 
+/**
+ * ═══════════════════════════════════════════════════════════
+ *  ตั้งค่าครั้งแรก — ตั้งชื่อผู้ใช้และรหัสผ่านของผู้ดูแลบนหน้าจอ
+ * ═══════════════════════════════════════════════════════════
+ *
+ *  ปัญหาที่แก้: การตั้งรหัสผ่านผ่านตัวแปรบนโฮสต์ทำให้ผู้ติดตั้งพลาดง่ายมาก
+ *  พิมพ์ผิดหนึ่งตัวก็เข้าระบบไม่ได้เลย และไม่มีทางกู้นอกจากลบฐานข้อมูล
+ *
+ *  เงื่อนไขความปลอดภัย: หน้านี้เปิดได้ก็ต่อเมื่อ "ยังไม่เคยมีใครเข้าระบบสำเร็จเลย"
+ *  พอมีคนตั้งค่าและเข้าระบบครั้งแรกได้ ประตูนี้จะปิดถาวร เปิดซ้ำไม่ได้อีก
+ *  และตอนที่ยังเปิดอยู่ ระบบยังไม่มีข้อมูลนักเรียนใด ๆ ให้เสียหาย
+ */
+function needsSetup() {
+  const row = get('SELECT COUNT(*) AS n FROM users WHERE last_login_at IS NOT NULL');
+  return (row?.n ?? 0) === 0;
+}
+
+authRouter.get('/setup-status', h((_req, res) => {
+  res.json({ needsSetup: needsSetup() });
+}));
+
+authRouter.post('/setup', h((req, res) => {
+  if (!needsSetup()) {
+    throw forbidden('ระบบถูกตั้งค่าเรียบร้อยแล้ว — หน้านี้ใช้ได้เฉพาะครั้งแรกเท่านั้น');
+  }
+
+  const username = str(req.body?.username, 'ชื่อผู้ใช้', { min: 3, max: 64 }).toLowerCase();
+  const displayName = str(req.body?.displayName, 'ชื่อที่แสดง', { required: false, max: 120 }) || 'ผู้ดูแลระบบ';
+  const password = str(req.body?.password, 'รหัสผ่าน', { min: 8, max: 200, trim: false });
+  const confirm = str(req.body?.confirmPassword, 'ยืนยันรหัสผ่าน', { min: 8, max: 200, trim: false });
+
+  if (password !== confirm) throw bad('รหัสผ่านสองช่องไม่ตรงกัน');
+  if (password.toLowerCase().includes(username.toLowerCase())) {
+    throw bad('รหัสผ่านต้องไม่มีชื่อผู้ใช้อยู่ในนั้น — เดาง่ายเกินไปสำหรับบัญชีที่เห็นข้อมูลนักเรียนทั้งโรงเรียน');
+  }
+  if (!/[^a-zA-Z]/.test(password)) {
+    throw bad('รหัสผ่านควรมีตัวเลขหรือสัญลักษณ์อย่างน้อยหนึ่งตัว');
+  }
+
+  const hash = hashPassword(password);
+  const existing = get('SELECT id FROM users WHERE username = ?', [username]);
+
+  if (existing) {
+    run(
+      `UPDATE users SET role = 'admin', password_hash = ?, display_name = ?, active = 1,
+                        must_change_password = 0, failed_logins = 0, locked_until = NULL
+         WHERE id = ?`,
+      [hash, displayName, existing.id],
+    );
+  } else {
+    run(
+      `INSERT INTO users (role, username, password_hash, display_name, must_change_password)
+       VALUES ('admin', ?, ?, ?, 0)`,
+      [username, hash, displayName],
+    );
+  }
+
+  const user = get('SELECT * FROM users WHERE username = ?', [username]);
+
+  // ปิดบัญชีผู้ดูแลอื่นที่ยังไม่เคยถูกใช้ — กันรหัสเริ่มต้นที่ตั้งไว้ตอนติดตั้งค้างเป็นทางเข้าลับ
+  const stale = run(
+    `UPDATE users SET active = 0
+       WHERE role = 'admin' AND id != ? AND last_login_at IS NULL`,
+    [user.id],
+  );
+
+  run("UPDATE users SET last_login_at = datetime('now') WHERE id = ?", [user.id]);
+  audit({ ...req, user }, 'setup.completed', { entity: 'user', entityId: user.id });
+  console.log(`[setup] ตั้งค่าผู้ดูแลระบบ "${username}" เรียบร้อย — ปิดหน้าตั้งค่าถาวรแล้ว`);
+  if (stale.changes) console.log(`[setup] ปิดบัญชีผู้ดูแลที่ไม่เคยถูกใช้ ${stale.changes} บัญชี`);
+
+  res.json({ token: signToken({ sub: user.id, role: user.role }), user: publicUser(user) });
+}));
+
 authRouter.post('/login', h((req, res) => {
   const username = str(req.body?.username, 'ชื่อผู้ใช้', { max: 64 });
   const password = str(req.body?.password, 'รหัสผ่าน', { max: 200, trim: false });
