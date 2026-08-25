@@ -24,7 +24,21 @@ import { hashPassword } from './lib/crypto.js';
   const userCount = get('SELECT COUNT(*) AS n FROM users')?.n ?? 0;
   const existing = get('SELECT id FROM users WHERE username = ?', [adminUser]);
 
-  if (userCount === 0 || (process.env.ADMIN_RESET === 'true' && !existing)) {
+  /**
+   * ระบบถูกตั้งค่าเสร็จแล้วหรือยัง — วัดจาก "เคยมีคนเข้าระบบสำเร็จไหม"
+   *
+   * ถ้าตั้งค่าเสร็จแล้ว ตัวแปร ADMIN_* ทั้งหมดจะไม่มีผลอีกเลย
+   * ป้องกันกรณีที่ผู้ติดตั้งลืมลบ ADMIN_RESET ทิ้ง แล้วรหัสผ่านถูกตั้งกลับ
+   * ทุกครั้งที่โฮสต์รีสตาร์ต ซึ่งเป็นกับดักที่ทำให้เข้าระบบไม่ได้แบบหาสาเหตุยาก
+   */
+  const alreadySetUp = (get('SELECT COUNT(*) AS n FROM users WHERE last_login_at IS NOT NULL')?.n ?? 0) > 0;
+  const wantReset = process.env.ADMIN_RESET === 'true' && !alreadySetUp;
+
+  if (process.env.ADMIN_RESET === 'true' && alreadySetUp) {
+    console.warn('[bootstrap] ข้าม ADMIN_RESET เพราะระบบถูกตั้งค่าเรียบร้อยแล้ว — ลบตัวแปรนี้ทิ้งได้เลย');
+  }
+
+  if (userCount === 0 || (wantReset && !existing)) {
     run(
       `INSERT INTO users (role, username, password_hash, display_name, must_change_password)
        VALUES ('admin', ?, ?, 'ผู้ดูแลระบบ', 1)`,
@@ -34,7 +48,7 @@ import { hashPassword } from './lib/crypto.js';
     if (!process.env.ADMIN_INITIAL_PASSWORD) {
       console.warn('[bootstrap] ⚠️ ใช้รหัสเริ่มต้น admin1234 — เข้าระบบแล้วระบบจะบังคับเปลี่ยนทันที');
     }
-  } else if (process.env.ADMIN_RESET === 'true' && existing) {
+  } else if (wantReset && existing) {
     run(
       `UPDATE users SET password_hash = ?, must_change_password = 1, active = 1,
                         failed_logins = 0, locked_until = NULL
